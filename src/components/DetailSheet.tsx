@@ -21,6 +21,14 @@ const TYPE_OPTIONS: Array<{ label: string; value: BookType }> = [
   { label: "Non-Fiction", value: "NF" },
   { label: "Reference", value: "R" }
 ];
+const FICTION_DEWEY_BY_LANGUAGE: Record<Exclude<BookLanguage, "">, string> = {
+  English: "FE",
+  Malay: "FM",
+  Chinese: "FC",
+  Tamil: "FT",
+  Others: "FO"
+};
+const FICTION_DEWEY_CODES = new Set(Object.values(FICTION_DEWEY_BY_LANGUAGE));
 
 type DetailSheetProps = {
   open: boolean;
@@ -76,7 +84,23 @@ export function DetailSheet({
   }
 
   const updateField = <K extends keyof BookDraft>(field: K, value: BookDraft[K]) => {
-    setDraft((current) => (current ? { ...current, [field]: value } : current));
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const next = { ...current, [field]: value };
+
+      if (field === "language" || field === "type") {
+        if (next.type === "F" && next.language) {
+          next.dewey = FICTION_DEWEY_BY_LANGUAGE[next.language];
+        } else if (next.type !== "F" && FICTION_DEWEY_CODES.has(next.dewey)) {
+          next.dewey = "";
+        }
+      }
+
+      return next;
+    });
   };
 
   const copyText = async (value: string, label: string) => {

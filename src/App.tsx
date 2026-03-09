@@ -68,6 +68,7 @@ type DetailState = {
   draft: BookDraft;
   isCurrentlyRejected: boolean;
 };
+type QuickFilterMode = "accepted" | "review" | "rejected" | "flagged";
 
 const SUPABASE_CONFIG_MESSAGE =
   "Add VITE_SUPABASE_ANON_KEY to connect this web app to your Supabase project.";
@@ -140,11 +141,66 @@ export default function App() {
   const acceptedBooks = useMemo(() => books.filter((book) => !book.isRejected), [books]);
   const rejectedBooks = useMemo(() => books.filter((book) => book.isRejected), [books]);
   const flaggedBooks = useMemo(() => books.filter((book) => book.isFlagged), [books]);
-  const needReviewBooks = useMemo(() => books.filter((book) => isBookIncomplete(book)), [books]);
+  const needReviewBooks = useMemo(
+    () => books.filter((book) => !book.isRejected && isBookIncomplete(book)),
+    [books]
+  );
   const headerTitle = useMemo(() => getHeaderTitle(filters), [filters]);
   const detailExistingBook = detailState
     ? books.find((entry) => entry.isbn === detailState.draft.isbn) ?? null
     : null;
+
+  function getQuickFilterPreset(mode: QuickFilterMode): BooksFilterState {
+    switch (mode) {
+      case "accepted":
+        return {
+          hideRejectedBooks: true,
+          hideFlaggedBooks: false,
+          hideAcceptedBooks: false,
+          hideIncompleteBooks: false,
+          isShowFlaggedOnlyMode: false
+        };
+      case "review":
+        return {
+          hideRejectedBooks: true,
+          hideFlaggedBooks: false,
+          hideAcceptedBooks: true,
+          hideIncompleteBooks: false,
+          isShowFlaggedOnlyMode: false
+        };
+      case "rejected":
+        return {
+          hideRejectedBooks: false,
+          hideFlaggedBooks: false,
+          hideAcceptedBooks: true,
+          hideIncompleteBooks: true,
+          isShowFlaggedOnlyMode: false
+        };
+      case "flagged":
+        return {
+          hideRejectedBooks: true,
+          hideFlaggedBooks: false,
+          hideAcceptedBooks: true,
+          hideIncompleteBooks: true,
+          isShowFlaggedOnlyMode: true
+        };
+    }
+  }
+
+  function isQuickFilterActive(mode: QuickFilterMode): boolean {
+    const preset = getQuickFilterPreset(mode);
+    return (
+      filters.hideRejectedBooks === preset.hideRejectedBooks &&
+      filters.hideFlaggedBooks === preset.hideFlaggedBooks &&
+      filters.hideAcceptedBooks === preset.hideAcceptedBooks &&
+      filters.hideIncompleteBooks === preset.hideIncompleteBooks &&
+      filters.isShowFlaggedOnlyMode === preset.isShowFlaggedOnlyMode
+    );
+  }
+
+  function toggleQuickFilter(mode: QuickFilterMode) {
+    setFilters(isQuickFilterActive(mode) ? defaultFilters : getQuickFilterPreset(mode));
+  }
 
   async function loadBooks(showLoader = true) {
     if (!supabase) {
@@ -312,16 +368,19 @@ export default function App() {
       return;
     }
 
-    let query = supabase.from("books").delete();
+    let error: { message: string } | null = null;
+
     if (mode === "accepted") {
-      query = query.eq("is_rejected", false);
+      const result = await supabase.from("books").delete().eq("is_rejected", false);
+      error = result.error;
     } else if (mode === "rejected") {
-      query = query.eq("is_rejected", true);
+      const result = await supabase.from("books").delete().eq("is_rejected", true);
+      error = result.error;
     } else {
-      query = query.not("isbn", "is", null);
+      const result = await supabase.from("books").delete().not("isbn", "is", null);
+      error = result.error;
     }
 
-    const { error } = await query;
     if (error) {
       setToast(`Clear failed: ${error.message}`);
       return;
@@ -438,7 +497,6 @@ export default function App() {
         <div className="app-shell">
           <header className="topbar">
             <div>
-              <p className="topbar-kicker">Safari Home Screen</p>
               <h1>Scan to LMS</h1>
             </div>
             <div className="toolbar-actions">
@@ -465,10 +523,34 @@ export default function App() {
           </header>
 
           <section className="stats-row">
-            <StatCard label="Accepted" value={acceptedBooks.length} tone="accepted" />
-            <StatCard label="Need Review" value={needReviewBooks.length} tone="review" />
-            <StatCard label="Rejected" value={rejectedBooks.length} tone="rejected" />
-            <StatCard label="Flagged" value={flaggedBooks.length} tone="neutral" />
+            <StatCard
+              label="Accepted"
+              value={acceptedBooks.length}
+              tone="accepted"
+              active={isQuickFilterActive("accepted")}
+              onClick={() => toggleQuickFilter("accepted")}
+            />
+            <StatCard
+              label="Need Review"
+              value={needReviewBooks.length}
+              tone="review"
+              active={isQuickFilterActive("review")}
+              onClick={() => toggleQuickFilter("review")}
+            />
+            <StatCard
+              label="Rejected"
+              value={rejectedBooks.length}
+              tone="rejected"
+              active={isQuickFilterActive("rejected")}
+              onClick={() => toggleQuickFilter("rejected")}
+            />
+            <StatCard
+              label="Flagged"
+              value={flaggedBooks.length}
+              tone="neutral"
+              active={isQuickFilterActive("flagged")}
+              onClick={() => toggleQuickFilter("flagged")}
+            />
           </section>
 
           {appError ? (
@@ -750,17 +832,26 @@ function getRowTone(book: BookRecord) {
 function StatCard({
   label,
   value,
-  tone
+  tone,
+  active,
+  onClick
 }: {
   label: string;
   value: number;
   tone: "accepted" | "review" | "rejected" | "neutral";
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
-    <article className={`stat-card ${tone}`}>
+    <button
+      className={`stat-card ${tone}${active ? " active" : ""}`}
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+    >
       <p>{label}</p>
       <strong>{value}</strong>
-    </article>
+    </button>
   );
 }
 
