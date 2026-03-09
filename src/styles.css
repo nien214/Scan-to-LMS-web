@@ -134,14 +134,19 @@ button {
 
 .stat-card {
   appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  text-align: left;
+  text-align: center;
   padding: 14px 16px;
   border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(16px);
   box-shadow: var(--shadow);
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  color: var(--text);
 }
 
 .stat-card:hover {
@@ -169,6 +174,7 @@ button {
   display: block;
   margin-top: 6px;
   font-size: 1.6rem;
+  color: var(--text);
 }
 
 .stat-card.accepted {
