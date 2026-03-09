@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+
 const DEWEY_SECTIONS = [
   ["000", "Computer science, information and general works"],
   ["100", "Philosophy and psychology"],
@@ -44,7 +46,7 @@ export function DeweyReference({ open, onClose }: DeweyReferenceProps) {
             <h2>Dewey Classification</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose}>
-            Close
+            <X size={18} />
           </button>
         </div>
 
