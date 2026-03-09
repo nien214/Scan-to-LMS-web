@@ -50,6 +50,8 @@ npm run dev
 - The current SQL policies are public `anon` read/write policies because the native app did not have authentication. If this app will be used outside a trusted internal environment, add auth and tighten RLS before shipping.
 - The web app expects the `complete-book-info` Edge Function to be deployed in the same Supabase project as the `books` table.
 - Camera barcode scanning needs HTTPS on iPhone.
+- For GitHub Pages project-site deploys, the app builds with the `/Scan-to-LMS-web/` base path through the workflow in [.github/workflows/deploy.yml](/Users/tankuannien/Scan%20to%20LMS%20web/.github/workflows/deploy.yml).
+- Add GitHub repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before enabling the Pages workflow.
 
 ## Build
 

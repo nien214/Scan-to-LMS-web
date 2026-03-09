@@ -2,7 +2,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 
+const repoName = "Scan-to-LMS-web";
+const isGitHubPagesBuild = process.env.GITHUB_ACTIONS === "true";
+const base = isGitHubPagesBuild ? `/${repoName}/` : "/";
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -16,8 +21,8 @@ export default defineConfig({
         background_color: "#f5efe5",
         display: "standalone",
         orientation: "portrait",
-        scope: "/",
-        start_url: "/",
+        scope: base,
+        start_url: base,
         icons: [
           {
             src: "icon-192.png",
