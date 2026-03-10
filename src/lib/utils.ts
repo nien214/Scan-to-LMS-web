@@ -1,14 +1,13 @@
-import type { BookDraft, BookLanguage, BookRecord, BooksFilterState } from "../types";
+import type {
+  BookDraft,
+  BookLanguage,
+  BookRecord,
+  BooksFilterState,
+} from "../types";
 
 export function normalizeIsbn(value: string): string {
   const digits = value.replace(/[^\dXx]/g, "").toUpperCase();
-  if (digits.length >= 13) {
-    return digits.slice(0, 13);
-  }
-  if (digits.length >= 10) {
-    return digits.slice(0, 10);
-  }
-  return digits;
+  return digits.slice(0, 13);
 }
 
 export function normalizeInitial(initial: string): string {
@@ -50,11 +49,25 @@ export function normalizeDraft(draft: BookDraft, rejected: boolean): BookDraft {
     dewey: draft.dewey.trim(),
     initial: normalizedInitial,
     quantity: Math.max(1, Number(draft.quantity) || 1),
-    isRejected: rejected
+    isRejected: rejected,
   };
 }
 
-export function isBookIncomplete(book: Pick<BookDraft, "title" | "author" | "publisher" | "year" | "pages" | "price" | "language" | "type" | "dewey" | "initial">): boolean {
+export function isBookIncomplete(
+  book: Pick<
+    BookDraft,
+    | "title"
+    | "author"
+    | "publisher"
+    | "year"
+    | "pages"
+    | "price"
+    | "language"
+    | "type"
+    | "dewey"
+    | "initial"
+  >,
+): boolean {
   return (
     !book.title ||
     !book.author ||
@@ -108,11 +121,15 @@ export function inferFallback(title: string): {
 }
 
 export function sortBooks(books: BookRecord[]): BookRecord[] {
-  return [...books].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return [...books].sort(
+    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+  );
 }
 
 export function getHeaderTitle(filters: BooksFilterState): string {
-  const hiddenCount = Object.entries(filters).filter(([key, value]) => key !== "isShowFlaggedOnlyMode" && value).length;
+  const hiddenCount = Object.entries(filters).filter(
+    ([key, value]) => key !== "isShowFlaggedOnlyMode" && value,
+  ).length;
   if (hiddenCount === 0) {
     return "All Books";
   }
@@ -144,7 +161,7 @@ export function getHeaderTitle(filters: BooksFilterState): string {
 
 export function shouldHideBook(
   book: BookRecord,
-  filters: BooksFilterState
+  filters: BooksFilterState,
 ): boolean {
   const incomplete = isBookIncomplete(book);
   const accepted = !book.isRejected && !incomplete;
@@ -155,10 +172,13 @@ export function shouldHideBook(
 
   const hideForRejected = book.isRejected && filters.hideRejectedBooks;
   const hideForAccepted = accepted && filters.hideAcceptedBooks;
-  const hideForIncomplete = incomplete && !book.isRejected && filters.hideIncompleteBooks;
+  const hideForIncomplete =
+    incomplete && !book.isRejected && filters.hideIncompleteBooks;
   const hideForFlagged = book.isFlagged && filters.hideFlaggedBooks;
 
-  return hideForRejected || hideForAccepted || hideForIncomplete || hideForFlagged;
+  return (
+    hideForRejected || hideForAccepted || hideForIncomplete || hideForFlagged
+  );
 }
 
 export function toCsv(books: BookRecord[]): string {
@@ -174,7 +194,7 @@ export function toCsv(books: BookRecord[]): string {
     "Type",
     "Dewey",
     "Initial",
-    "Quantity"
+    "Quantity",
   ];
 
   const rows = books.map((book) =>
@@ -190,16 +210,19 @@ export function toCsv(books: BookRecord[]): string {
       book.type,
       book.dewey,
       book.initial,
-      String(book.quantity)
+      String(book.quantity),
     ]
-      .map((value) => `"${String(value).replaceAll("\"", "\"\"")}"`)
-      .join(",")
+      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+      .join(","),
   );
 
   return [headers.join(","), ...rows].join("\n");
 }
 
-export async function shareOrDownloadCsv(filename: string, csv: string): Promise<void> {
+export async function shareOrDownloadCsv(
+  filename: string,
+  csv: string,
+): Promise<void> {
   const file = new File([csv], filename, { type: "text/csv;charset=utf-8" });
   if (
     typeof navigator !== "undefined" &&
@@ -230,7 +253,7 @@ export function timestampFilename(prefix: string): string {
     "_",
     String(now.getHours()).padStart(2, "0"),
     String(now.getMinutes()).padStart(2, "0"),
-    String(now.getSeconds()).padStart(2, "0")
+    String(now.getSeconds()).padStart(2, "0"),
   ];
   return `${prefix}_${parts.join("")}.csv`;
 }
