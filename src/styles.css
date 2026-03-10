@@ -427,7 +427,7 @@ button {
 
 .scanner-backdrop {
     opacity: 0;
-    transition: opacity 260ms ease;
+    transition: opacity 320ms ease;
 }
 
 .scanner-backdrop-open {
@@ -439,9 +439,9 @@ button {
 }
 
 .scanner-sheet {
-    transform: translateY(calc(100% + 24px));
+    transform: translateY(calc(100% + 64px));
     opacity: 1;
-    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
     will-change: transform;
 }
 
@@ -450,7 +450,7 @@ button {
 }
 
 .scanner-sheet-closed {
-    transform: translateY(calc(100% + 24px));
+    transform: translateY(calc(100% + 64px));
     opacity: 1;
 }
 

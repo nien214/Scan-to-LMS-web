@@ -4,7 +4,7 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Camera, LoaderCircle, ScanLine, X } from "lucide-react";
 import { normalizeIsbn } from "../lib/utils";
 
-const SCANNER_SHEET_ANIMATION_MS = 260;
+const SCANNER_SHEET_ANIMATION_MS = 420;
 
 type ScannerSheetProps = {
   open: boolean;
