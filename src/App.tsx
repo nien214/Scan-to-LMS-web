@@ -1,13 +1,20 @@
-import { Suspense, lazy, startTransition, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  startTransition,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   AlertTriangle,
+  Ellipsis,
   Eye,
-  ExternalLink,
   Flag,
   LoaderCircle,
   Search,
   SquareArrowOutUpRight,
-  Trash2
+  Trash2,
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import {
@@ -21,26 +28,26 @@ import {
   shouldHideBook,
   sortBooks,
   timestampFilename,
-  toCsv
+  toCsv,
 } from "./lib/utils";
 import type {
   BookDraft,
   BookRecord,
   BooksFilterState,
-  CompletionResult
+  CompletionResult,
 } from "./types";
 import { defaultFilters } from "./types";
 
 const ScannerSheet = lazy(() =>
   import("./components/ScannerSheet").then((module) => ({
-    default: module.ScannerSheet
-  }))
+    default: module.ScannerSheet,
+  })),
 );
 
 const DetailSheet = lazy(() =>
   import("./components/DetailSheet").then((module) => ({
-    default: module.DetailSheet
-  }))
+    default: module.DetailSheet,
+  })),
 );
 
 type DatabaseBook = {
@@ -76,12 +83,16 @@ const SUPABASE_CONFIG_MESSAGE =
 export default function App() {
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [appError, setAppError] = useState<string | null>(hasSupabaseConfig ? null : SUPABASE_CONFIG_MESSAGE);
+  const [appError, setAppError] = useState<string | null>(
+    hasSupabaseConfig ? null : SUPABASE_CONFIG_MESSAGE,
+  );
   const [filters, setFilters] = useState<BooksFilterState>(defaultFilters);
   const [toast, setToast] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
-  const [scannerStatus, setScannerStatus] = useState("Position barcode in frame");
+  const [scannerStatus, setScannerStatus] = useState(
+    "Position barcode in frame",
+  );
   const [detailState, setDetailState] = useState<DetailState | null>(null);
   const [busyAction, setBusyAction] = useState(false);
   const [menuState, setMenuState] = useState<MenuState>(null);
@@ -103,7 +114,7 @@ export default function App() {
         { event: "*", schema: "public", table: "books" },
         () => {
           void loadBooks(false);
-        }
+        },
       )
       .subscribe();
 
@@ -136,18 +147,27 @@ export default function App() {
   const sortedBooks = useMemo(() => sortBooks(books), [books]);
   const visibleBooks = useMemo(
     () => sortedBooks.filter((book) => !shouldHideBook(book, filters)),
-    [filters, sortedBooks]
+    [filters, sortedBooks],
   );
-  const acceptedBooks = useMemo(() => books.filter((book) => !book.isRejected), [books]);
-  const rejectedBooks = useMemo(() => books.filter((book) => book.isRejected), [books]);
-  const flaggedBooks = useMemo(() => books.filter((book) => book.isFlagged), [books]);
+  const acceptedBooks = useMemo(
+    () => books.filter((book) => !book.isRejected),
+    [books],
+  );
+  const rejectedBooks = useMemo(
+    () => books.filter((book) => book.isRejected),
+    [books],
+  );
+  const flaggedBooks = useMemo(
+    () => books.filter((book) => book.isFlagged),
+    [books],
+  );
   const needReviewBooks = useMemo(
     () => books.filter((book) => !book.isRejected && isBookIncomplete(book)),
-    [books]
+    [books],
   );
   const headerTitle = useMemo(() => getHeaderTitle(filters), [filters]);
   const detailExistingBook = detailState
-    ? books.find((entry) => entry.isbn === detailState.draft.isbn) ?? null
+    ? (books.find((entry) => entry.isbn === detailState.draft.isbn) ?? null)
     : null;
 
   function getQuickFilterPreset(mode: QuickFilterMode): BooksFilterState {
@@ -158,7 +178,7 @@ export default function App() {
           hideFlaggedBooks: false,
           hideAcceptedBooks: false,
           hideIncompleteBooks: false,
-          isShowFlaggedOnlyMode: false
+          isShowFlaggedOnlyMode: false,
         };
       case "review":
         return {
@@ -166,7 +186,7 @@ export default function App() {
           hideFlaggedBooks: false,
           hideAcceptedBooks: true,
           hideIncompleteBooks: false,
-          isShowFlaggedOnlyMode: false
+          isShowFlaggedOnlyMode: false,
         };
       case "rejected":
         return {
@@ -174,7 +194,7 @@ export default function App() {
           hideFlaggedBooks: false,
           hideAcceptedBooks: true,
           hideIncompleteBooks: true,
-          isShowFlaggedOnlyMode: false
+          isShowFlaggedOnlyMode: false,
         };
       case "flagged":
         return {
@@ -182,7 +202,7 @@ export default function App() {
           hideFlaggedBooks: false,
           hideAcceptedBooks: true,
           hideIncompleteBooks: true,
-          isShowFlaggedOnlyMode: true
+          isShowFlaggedOnlyMode: true,
         };
     }
   }
@@ -199,7 +219,9 @@ export default function App() {
   }
 
   function toggleQuickFilter(mode: QuickFilterMode) {
-    setFilters(isQuickFilterActive(mode) ? defaultFilters : getQuickFilterPreset(mode));
+    setFilters(
+      isQuickFilterActive(mode) ? defaultFilters : getQuickFilterPreset(mode),
+    );
   }
 
   async function loadBooks(showLoader = true) {
@@ -248,7 +270,7 @@ export default function App() {
       isRejected: row.is_rejected,
       isFlagged: row.is_flagged,
       createdAt: row.created_at,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     };
   }
 
@@ -267,7 +289,7 @@ export default function App() {
       initial: draft.initial,
       quantity: draft.quantity,
       is_rejected: draft.isRejected,
-      is_flagged: draft.isFlagged
+      is_flagged: draft.isFlagged,
     };
   }
 
@@ -314,7 +336,7 @@ export default function App() {
       initial: book.initial,
       quantity: book.quantity,
       isRejected: book.isRejected,
-      isFlagged: !book.isFlagged
+      isFlagged: !book.isFlagged,
     };
 
     const { error } = await supabase
@@ -340,7 +362,10 @@ export default function App() {
       return;
     }
 
-    const { error } = await supabase.from("books").delete().eq("isbn", book.isbn);
+    const { error } = await supabase
+      .from("books")
+      .delete()
+      .eq("isbn", book.isbn);
     if (error) {
       setToast(`Delete failed: ${error.message}`);
       return;
@@ -361,7 +386,7 @@ export default function App() {
     const labels = {
       all: "all accepted and rejected books",
       accepted: "all accepted books",
-      rejected: "all rejected books"
+      rejected: "all rejected books",
     };
 
     if (!window.confirm(`Clear ${labels[mode]}? This cannot be undone.`)) {
@@ -371,13 +396,22 @@ export default function App() {
     let error: { message: string } | null = null;
 
     if (mode === "accepted") {
-      const result = await supabase.from("books").delete().eq("is_rejected", false);
+      const result = await supabase
+        .from("books")
+        .delete()
+        .eq("is_rejected", false);
       error = result.error;
     } else if (mode === "rejected") {
-      const result = await supabase.from("books").delete().eq("is_rejected", true);
+      const result = await supabase
+        .from("books")
+        .delete()
+        .eq("is_rejected", true);
       error = result.error;
     } else {
-      const result = await supabase.from("books").delete().not("isbn", "is", null);
+      const result = await supabase
+        .from("books")
+        .delete()
+        .not("isbn", "is", null);
       error = result.error;
     }
 
@@ -397,7 +431,9 @@ export default function App() {
       return;
     }
 
-    const filename = timestampFilename(mode === "accepted" ? "Accepted" : "Rejected");
+    const filename = timestampFilename(
+      mode === "accepted" ? "Accepted" : "Rejected",
+    );
     await shareOrDownloadCsv(filename, toCsv(collection));
     setMenuState(null);
   }
@@ -417,9 +453,12 @@ export default function App() {
 
     try {
       if (supabase) {
-        const { data, error } = await supabase.functions.invoke("complete-book-info", {
-          body: { isbn }
-        });
+        const { data, error } = await supabase.functions.invoke(
+          "complete-book-info",
+          {
+            body: { isbn },
+          },
+        );
 
         if (error) {
           throw error;
@@ -435,9 +474,11 @@ export default function App() {
     const fallback = titleSeed
       ? inferFallback(titleSeed)
       : {
-          language: (existing?.language || completion?.language || "Others") as BookDraft["language"],
+          language: (existing?.language ||
+            completion?.language ||
+            "Others") as BookDraft["language"],
           type: (existing?.type || completion?.type || "") as BookDraft["type"],
-          dewey: existing?.dewey || completion?.dewey || ""
+          dewey: existing?.dewey || completion?.dewey || "",
         };
 
     const nextDraft: BookDraft = {
@@ -448,8 +489,12 @@ export default function App() {
       year: completion?.year || existing?.year || "",
       pages: completion?.pages || existing?.pages || "",
       price: existing?.price || "",
-      language: (completion?.language || existing?.language || fallback.language) as BookDraft["language"],
-      type: (completion?.type || existing?.type || fallback.type) as BookDraft["type"],
+      language: (completion?.language ||
+        existing?.language ||
+        fallback.language) as BookDraft["language"],
+      type: (completion?.type ||
+        existing?.type ||
+        fallback.type) as BookDraft["type"],
       dewey: completion?.dewey || existing?.dewey || fallback.dewey,
       initial:
         completion?.initial ||
@@ -457,7 +502,7 @@ export default function App() {
         deriveInitial(completion?.author || existing?.author || ""),
       quantity: existing?.quantity || 1,
       isRejected: existing?.isRejected || false,
-      isFlagged: existing?.isFlagged || false
+      isFlagged: existing?.isFlagged || false,
     };
 
     setScannerBusy(false);
@@ -465,7 +510,7 @@ export default function App() {
     setScannerOpen(false);
     setDetailState({
       draft: nextDraft,
-      isCurrentlyRejected: existing?.isRejected || false
+      isCurrentlyRejected: existing?.isRejected || false,
     });
   }
 
@@ -485,9 +530,9 @@ export default function App() {
         initial: book.initial,
         quantity: book.quantity,
         isRejected: book.isRejected,
-        isFlagged: book.isFlagged
+        isFlagged: book.isFlagged,
       },
-      isCurrentlyRejected: book.isRejected
+      isCurrentlyRejected: book.isRejected,
     });
   };
 
@@ -500,7 +545,11 @@ export default function App() {
               <h1>Scan to LMS</h1>
             </div>
             <div className="toolbar-actions">
-              <button className="icon-button" type="button" onClick={() => setMenuState("filters")}>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setMenuState("filters")}
+              >
                 <Eye size={18} />
               </button>
               <button
@@ -589,7 +638,9 @@ export default function App() {
                   >
                     <div className="book-row-main">
                       <div className="book-title-row">
-                        {isBookIncomplete(book) ? <AlertTriangle size={14} /> : null}
+                        {isBookIncomplete(book) ? (
+                          <AlertTriangle size={14} />
+                        ) : null}
                         {book.isFlagged ? <Flag size={14} /> : null}
                         <h3>{book.title || "(Unknown title)"}</h3>
                       </div>
@@ -598,7 +649,9 @@ export default function App() {
 
                     <div className="book-row-actions">
                       <button
-                        className={book.isFlagged ? "icon-button toggled" : "icon-button"}
+                        className={
+                          book.isFlagged ? "icon-button toggled" : "icon-button"
+                        }
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -610,12 +663,13 @@ export default function App() {
                       <button
                         className="icon-button"
                         type="button"
+                        aria-label="Open book menu"
                         onClick={(event) => {
                           event.stopPropagation();
                           setRowMenuBook(book);
                         }}
                       >
-                        <ExternalLink size={16} />
+                        <Ellipsis size={16} />
                       </button>
                     </div>
                   </article>
@@ -626,14 +680,30 @@ export default function App() {
 
           {books.length > 0 ? (
             <footer className="legend-bar">
-              <LegendItem label="Accepted" tone="accepted" hidden={filters.hideAcceptedBooks} />
-              <LegendItem label="Need Review" tone="review" hidden={filters.hideIncompleteBooks} />
-              <LegendItem label="Rejected" tone="rejected" hidden={filters.hideRejectedBooks} />
+              <LegendItem
+                label="Accepted"
+                tone="accepted"
+                hidden={filters.hideAcceptedBooks}
+              />
+              <LegendItem
+                label="Need Review"
+                tone="review"
+                hidden={filters.hideIncompleteBooks}
+              />
+              <LegendItem
+                label="Rejected"
+                tone="rejected"
+                hidden={filters.hideRejectedBooks}
+              />
             </footer>
           ) : null}
         </div>
 
-        <button className="scan-fab" type="button" onClick={() => setScannerOpen(true)}>
+        <button
+          className="scan-fab"
+          type="button"
+          onClick={() => setScannerOpen(true)}
+        >
           Scan
         </button>
 
@@ -665,14 +735,14 @@ export default function App() {
           onReject={async (draft) => {
             await saveBook(draft, true);
           }}
-        onDelete={
-          detailExistingBook
-            ? async () => {
-                await deleteBook(detailExistingBook);
-              }
-            : undefined
-        }
-      />
+          onDelete={
+            detailExistingBook
+              ? async () => {
+                  await deleteBook(detailExistingBook);
+                }
+              : undefined
+          }
+        />
       </Suspense>
 
       <ActionSheet
@@ -681,42 +751,58 @@ export default function App() {
         onClose={() => setMenuState(null)}
       >
         <ActionButton
-          label={filters.hideRejectedBooks ? "Show Rejected Books" : "Hide Rejected Books"}
+          label={
+            filters.hideRejectedBooks
+              ? "Show Rejected Books"
+              : "Hide Rejected Books"
+          }
           onClick={() =>
             setFilters((current) => ({
               ...current,
               hideRejectedBooks: !current.hideRejectedBooks,
-              isShowFlaggedOnlyMode: false
+              isShowFlaggedOnlyMode: false,
             }))
           }
         />
         <ActionButton
-          label={filters.hideFlaggedBooks ? "Show Flagged Books" : "Hide Flagged Books"}
+          label={
+            filters.hideFlaggedBooks
+              ? "Show Flagged Books"
+              : "Hide Flagged Books"
+          }
           onClick={() =>
             setFilters((current) => ({
               ...current,
               hideFlaggedBooks: !current.hideFlaggedBooks,
-              isShowFlaggedOnlyMode: false
+              isShowFlaggedOnlyMode: false,
             }))
           }
         />
         <ActionButton
-          label={filters.hideAcceptedBooks ? "Show Accepted Books" : "Hide Accepted Books"}
+          label={
+            filters.hideAcceptedBooks
+              ? "Show Accepted Books"
+              : "Hide Accepted Books"
+          }
           onClick={() =>
             setFilters((current) => ({
               ...current,
               hideAcceptedBooks: !current.hideAcceptedBooks,
-              isShowFlaggedOnlyMode: false
+              isShowFlaggedOnlyMode: false,
             }))
           }
         />
         <ActionButton
-          label={filters.hideIncompleteBooks ? "Show Need Review Books" : "Hide Need Review Books"}
+          label={
+            filters.hideIncompleteBooks
+              ? "Show Need Review Books"
+              : "Hide Need Review Books"
+          }
           onClick={() =>
             setFilters((current) => ({
               ...current,
               hideIncompleteBooks: !current.hideIncompleteBooks,
-              isShowFlaggedOnlyMode: false
+              isShowFlaggedOnlyMode: false,
             }))
           }
         />
@@ -728,14 +814,21 @@ export default function App() {
               hideFlaggedBooks: false,
               hideAcceptedBooks: true,
               hideIncompleteBooks: true,
-              isShowFlaggedOnlyMode: true
+              isShowFlaggedOnlyMode: true,
             })
           }
         />
-        <ActionButton label="Show All Books" onClick={() => setFilters(defaultFilters)} />
+        <ActionButton
+          label="Show All Books"
+          onClick={() => setFilters(defaultFilters)}
+        />
       </ActionSheet>
 
-      <ActionSheet open={menuState === "export"} title="Export CSV" onClose={() => setMenuState(null)}>
+      <ActionSheet
+        open={menuState === "export"}
+        title="Export CSV"
+        onClose={() => setMenuState(null)}
+      >
         <ActionButton
           label={`Export Accepted Books (${acceptedBooks.length})`}
           disabled={acceptedBooks.length === 0}
@@ -748,10 +841,26 @@ export default function App() {
         />
       </ActionSheet>
 
-      <ActionSheet open={menuState === "clear"} title="Clear Entries" onClose={() => setMenuState(null)}>
-        <ActionButton label="Clear All (Accepted & Rejected)" danger onClick={() => void clearBooks("all")} />
-        <ActionButton label="Clear Accepted Books Only" danger onClick={() => void clearBooks("accepted")} />
-        <ActionButton label="Clear Rejected Books Only" danger onClick={() => void clearBooks("rejected")} />
+      <ActionSheet
+        open={menuState === "clear"}
+        title="Clear Entries"
+        onClose={() => setMenuState(null)}
+      >
+        <ActionButton
+          label="Clear All (Accepted & Rejected)"
+          danger
+          onClick={() => void clearBooks("all")}
+        />
+        <ActionButton
+          label="Clear Accepted Books Only"
+          danger
+          onClick={() => void clearBooks("accepted")}
+        />
+        <ActionButton
+          label="Clear Rejected Books Only"
+          danger
+          onClick={() => void clearBooks("rejected")}
+        />
       </ActionSheet>
 
       <ActionSheet
@@ -781,21 +890,33 @@ export default function App() {
           label="Search ISBN"
           onClick={() => {
             if (!rowMenuBook) return;
-            window.open(`https://isbnsearch.org/isbn/${encodeURIComponent(rowMenuBook.isbn)}`, "_blank", "noopener,noreferrer");
+            window.open(
+              `https://isbnsearch.org/isbn/${encodeURIComponent(rowMenuBook.isbn)}`,
+              "_blank",
+              "noopener,noreferrer",
+            );
           }}
         />
         <ActionButton
           label="Google ISBN"
           onClick={() => {
             if (!rowMenuBook) return;
-            window.open(`https://www.google.com/search?q=${encodeURIComponent(rowMenuBook.isbn)}`, "_blank", "noopener,noreferrer");
+            window.open(
+              `https://www.google.com/search?q=${encodeURIComponent(rowMenuBook.isbn)}`,
+              "_blank",
+              "noopener,noreferrer",
+            );
           }}
         />
         <ActionButton
           label="Google Title"
           onClick={() => {
             if (!rowMenuBook) return;
-            window.open(`https://www.google.com/search?q=${encodeURIComponent(rowMenuBook.title || rowMenuBook.isbn)}`, "_blank", "noopener,noreferrer");
+            window.open(
+              `https://www.google.com/search?q=${encodeURIComponent(rowMenuBook.title || rowMenuBook.isbn)}`,
+              "_blank",
+              "noopener,noreferrer",
+            );
           }}
         />
         <ActionButton
@@ -834,7 +955,7 @@ function StatCard({
   value,
   tone,
   active,
-  onClick
+  onClick,
 }: {
   label: string;
   value: number;
@@ -858,7 +979,7 @@ function StatCard({
 function LegendItem({
   label,
   tone,
-  hidden
+  hidden,
 }: {
   label: string;
   tone: "accepted" | "review" | "rejected";
@@ -880,7 +1001,7 @@ function ActionSheet({
   open,
   title,
   onClose,
-  children
+  children,
 }: {
   open: boolean;
   title: string;
@@ -893,7 +1014,10 @@ function ActionSheet({
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
-      <section className="sheet action-sheet" onClick={(event) => event.stopPropagation()}>
+      <section
+        className="sheet action-sheet"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="sheet-header compact">
           <div>
             <p className="sheet-kicker">Actions</p>
@@ -910,7 +1034,7 @@ function ActionButton({
   label,
   onClick,
   danger = false,
-  disabled = false
+  disabled = false,
 }: {
   label: string;
   onClick: () => void;
