@@ -27,11 +27,14 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 3. Apply the SQL in [20260309_create_books.sql](/Users/tankuannien/Scan%20to%20LMS%20web/supabase/migrations/20260309_create_books.sql) to the Supabase project.
 
-4. In Supabase, set the Edge Function secret:
+4. In Supabase, set the Edge Function secrets:
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key
+GOOGLE_BOOKS_API_KEY=your_google_books_api_key
 ```
+
+Do not put `GOOGLE_BOOKS_API_KEY` in the frontend `.env` file. It is only used by the `complete-book-info` Edge Function.
 
 5. Deploy the Edge Function:
 

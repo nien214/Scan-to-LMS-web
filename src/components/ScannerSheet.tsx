@@ -4,6 +4,8 @@ import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Camera, LoaderCircle, ScanLine, X } from "lucide-react";
 import { normalizeIsbn } from "../lib/utils";
 
+const SCANNER_SHEET_ANIMATION_MS = 260;
+
 type ScannerSheetProps = {
   open: boolean;
   busy: boolean;
@@ -17,13 +19,15 @@ export function ScannerSheet({
   busy,
   statusMessage,
   onClose,
-  onDetected
+  onDetected,
 }: ScannerSheetProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const lockRef = useRef(false);
   const [manualIsbn, setManualIsbn] = useState("");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [shouldRender, setShouldRender] = useState(open);
+  const [isVisible, setIsVisible] = useState(open);
 
   const hints = useMemo(() => {
     const nextHints = new Map();
@@ -31,10 +35,35 @@ export function ScannerSheet({
       BarcodeFormat.EAN_13,
       BarcodeFormat.EAN_8,
       BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E
+      BarcodeFormat.UPC_E,
     ]);
     return nextHints;
   }, []);
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let frameId: number | undefined;
+
+    if (open) {
+      setShouldRender(true);
+      frameId = window.requestAnimationFrame(() => setIsVisible(true));
+    } else {
+      setIsVisible(false);
+      timeoutId = window.setTimeout(
+        () => setShouldRender(false),
+        SCANNER_SHEET_ANIMATION_MS,
+      );
+    }
+
+    return () => {
+      if (typeof frameId === "number") {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (typeof timeoutId === "number") {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -53,7 +82,7 @@ export function ScannerSheet({
 
     video.setAttribute("playsinline", "true");
     const reader = new BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 250
+      delayBetweenScanAttempts: 250,
     });
 
     let active = true;
@@ -64,8 +93,8 @@ export function ScannerSheet({
           audio: false,
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1280 }
-          }
+            width: { ideal: 1280 },
+          },
         },
         video,
         (result, error, controls) => {
@@ -87,9 +116,11 @@ export function ScannerSheet({
             !String(error.name ?? "").includes("NotFoundException") &&
             !String(error.message ?? "").includes("No MultiFormat Readers")
           ) {
-            setCameraError("Camera is active, but barcode detection needs a clearer frame.");
+            setCameraError(
+              "Camera is active, but barcode detection needs a clearer frame.",
+            );
           }
-        }
+        },
       )
       .catch(() => {
         if (active) {
@@ -117,14 +148,17 @@ export function ScannerSheet({
     await onDetected(isbn);
   };
 
-  if (!open) {
+  if (!shouldRender) {
     return null;
   }
 
   return (
-    <div className="sheet-backdrop" onClick={busy ? undefined : onClose}>
+    <div
+      className={`sheet-backdrop scanner-backdrop ${isVisible ? "scanner-backdrop-open" : "scanner-backdrop-closed"}`}
+      onClick={busy ? undefined : onClose}
+    >
       <section
-        className="sheet scanner-sheet"
+        className={`sheet scanner-sheet ${isVisible ? "scanner-sheet-open" : "scanner-sheet-closed"}`}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -171,7 +205,9 @@ export function ScannerSheet({
               autoComplete="off"
               placeholder="978..."
               value={manualIsbn}
-              onChange={(event) => setManualIsbn(normalizeIsbn(event.target.value))}
+              onChange={(event) =>
+                setManualIsbn(normalizeIsbn(event.target.value))
+              }
               disabled={busy}
             />
             <button className="primary-button" type="submit" disabled={busy}>
