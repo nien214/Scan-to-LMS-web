@@ -66,7 +66,7 @@ export function ScannerSheet({
   }, [open]);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !shouldRender) {
       lockRef.current = false;
       controlsRef.current?.stop();
       BrowserMultiFormatReader.releaseAllStreams();
@@ -133,7 +133,7 @@ export function ScannerSheet({
       controlsRef.current?.stop();
       BrowserMultiFormatReader.releaseAllStreams();
     };
-  }, [hints, onDetected, open]);
+  }, [hints, onDetected, open, shouldRender]);
 
   const submitManualIsbn = async (event: React.FormEvent) => {
     event.preventDefault();
