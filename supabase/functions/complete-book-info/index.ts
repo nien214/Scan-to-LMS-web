@@ -1,6 +1,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 type PartialBook = Record<string, string>;
@@ -19,6 +20,24 @@ type CompletionResult = {
 };
 
 type BookInfo = CompletionResult;
+
+type DenoRuntime = {
+  env: {
+    get(name: string): string | undefined;
+  };
+  serve(handler: (request: Request) => Response | Promise<Response>): unknown;
+};
+
+function getDenoRuntime(): DenoRuntime {
+  const runtime = (globalThis as typeof globalThis & { Deno?: DenoRuntime })
+    .Deno;
+  if (!runtime) {
+    throw new Error("Deno runtime is not available");
+  }
+  return runtime;
+}
+
+const deno = getDenoRuntime();
 
 const normalSystemPrompt = `You are a library cataloging expert.
 You MUST return a SINGLE JSON object.
@@ -90,9 +109,9 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     headers: {
       ...corsHeaders,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    ...init
+    ...init,
   });
 }
 
@@ -108,17 +127,27 @@ function normalizeInitial(input: string): string {
 }
 
 function deriveInitial(author: string): string {
-  const firstAuthor = author
-    .split(",")[0]
-    ?.split(" and ")[0]
-    ?.trim() ?? "";
-  const honorifics = new Set(["dr", "dr.", "mr", "mr.", "mrs", "mrs.", "ms", "ms.", "prof", "prof.", "sir", "dame"]);
+  const firstAuthor = author.split(",")[0]?.split(" and ")[0]?.trim() ?? "";
+  const honorifics = new Set([
+    "dr",
+    "dr.",
+    "mr",
+    "mr.",
+    "mrs",
+    "mrs.",
+    "ms",
+    "ms.",
+    "prof",
+    "prof.",
+    "sir",
+    "dame",
+  ]);
   const words = firstAuthor
     .split(/\s+/)
     .map((part) => part.replace(/[.,]/g, "").trim())
     .filter(Boolean)
     .filter((part) => !honorifics.has(part.toLowerCase()));
-  const surname = words.at(-1) ?? words[0] ?? "";
+  const surname = words.length > 0 ? words[words.length - 1] : (words[0] ?? "");
   return normalizeInitial(surname);
 }
 
@@ -148,7 +177,9 @@ function normalizeLanguage(input: string, title: string): string {
   return "English";
 }
 
-function inferFallback(title: string): Pick<BookInfo, "language" | "type" | "dewey"> {
+function inferFallback(
+  title: string,
+): Pick<BookInfo, "language" | "type" | "dewey"> {
   const lower = title.toLowerCase();
 
   for (const char of title) {
@@ -197,7 +228,10 @@ Your task:
 function extractJSON(text: string): string | null {
   let value = text.trim();
   if (value.startsWith("```")) {
-    value = value.replaceAll("```json", "").replaceAll("```", "").trim();
+    value = value
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
   }
   return value.startsWith("{") ? value : null;
 }
@@ -205,7 +239,7 @@ function extractJSON(text: string): string | null {
 function parseModelOutput(
   content: string,
   partial: PartialBook,
-  allowModelMetadataWithoutPartial: boolean
+  allowModelMetadataWithoutPartial: boolean,
 ): CompletionResult | null {
   const jsonText = extractJSON(content);
   if (!jsonText) {
@@ -226,7 +260,11 @@ function parseModelOutput(
   if (validType === "NF") {
     dewey = dewey.replace(/nf/gi, "").trim();
     const filtered = dewey.replace(/[^\d.]/g, "");
-    dewey = /^\d+(\.\d+)?$/.test(dewey) ? dewey : /^\d+(\.\d+)?$/.test(filtered) ? filtered : "";
+    dewey = /^\d+(\.\d+)?$/.test(dewey)
+      ? dewey
+      : /^\d+(\.\d+)?$/.test(filtered)
+        ? filtered
+        : "";
     const leading = Number((dewey.split(".")[0] ?? "").trim());
     if (dewey && (Number.isNaN(leading) || leading < 0 || leading >= 1000)) {
       dewey = "";
@@ -260,7 +298,8 @@ function parseModelOutput(
   const canTrustModelMetadata = hasPartial || allowModelMetadataWithoutPartial;
 
   const author = partialAuthor || (canTrustModelMetadata ? gptAuthor : "");
-  const publisher = partialPublisher || (canTrustModelMetadata ? gptPublisher : "");
+  const publisher =
+    partialPublisher || (canTrustModelMetadata ? gptPublisher : "");
   const year = partialYear || (canTrustModelMetadata ? gptYear : "");
   const rawInitial = String(parsed.initial ?? "");
 
@@ -271,18 +310,25 @@ function parseModelOutput(
     publisher,
     year,
     pages: "",
-    language: normalizeLanguage(String(parsed.language ?? ""), String(parsed.title ?? "")),
+    language: normalizeLanguage(
+      String(parsed.language ?? ""),
+      String(parsed.title ?? ""),
+    ),
     type: validType,
     dewey,
-    initial: rawInitial ? normalizeInitial(rawInitial) : author ? deriveInitial(author) : ""
+    initial: rawInitial
+      ? normalizeInitial(rawInitial)
+      : author
+        ? deriveInitial(author)
+        : "",
   };
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "scan-to-lms-web/1.0"
-    }
+      "User-Agent": "scan-to-lms-web/1.0",
+    },
   });
 
   if (!response.ok) {
@@ -292,6 +338,104 @@ async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
   return await response.json();
 }
 
+function decodeHtmlEntities(value: string): string {
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+
+  return value
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
+      String.fromCodePoint(parseInt(code, 16)),
+    )
+    .replace(
+      /&([a-z]+);/gi,
+      (match, name) => namedEntities[name.toLowerCase()] ?? match,
+    );
+}
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeHtmlText(value: string): string {
+  return decodeHtmlEntities(stripHtml(value)).replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractGoogleBooksWebField(html: string, label: string): string {
+  const labelPattern = escapeRegExp(label);
+  const match = html.match(
+    new RegExp(
+      `<td class="metadata_label">\\s*(?:<span[^>]*>)?${labelPattern}(?:</span>)?\\s*</td><td class="metadata_value">([\\s\\S]*?)</td>`,
+      "i",
+    ),
+  );
+
+  return match ? decodeHtmlText(match[1]) : "";
+}
+
+async function fetchGoogleBooksWeb(isbn: string): Promise<BookInfo | null> {
+  const response = await fetch(
+    `https://books.google.com/books?vid=ISBN${encodeURIComponent(isbn)}&hl=en`,
+    {
+      headers: {
+        "User-Agent": "scan-to-lms-web/1.0",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const html = await response.text();
+  const title = extractGoogleBooksWebField(html, "Title");
+  const author =
+    extractGoogleBooksWebField(html, "Author") ||
+    extractGoogleBooksWebField(html, "Authors") ||
+    extractGoogleBooksWebField(html, "Editor") ||
+    extractGoogleBooksWebField(html, "Editors");
+  const publisherLine = extractGoogleBooksWebField(html, "Publisher");
+  const isbnLine = extractGoogleBooksWebField(html, "ISBN");
+  const pagesLine = extractGoogleBooksWebField(html, "Length");
+
+  if (!title || (isbnLine && !isbnLine.includes(isbn))) {
+    return null;
+  }
+
+  const year = publisherLine.match(/(\d{4})(?!.*\d)/)?.[1] ?? "";
+  const publisher = year
+    ? publisherLine.replace(new RegExp(`,?\\s*${year}$`), "").trim()
+    : publisherLine;
+  const pages = pagesLine.match(/\d+/)?.[0] ?? "";
+
+  return {
+    isbn,
+    title,
+    author,
+    publisher,
+    year,
+    pages,
+    language: "",
+    type: "",
+    dewey: "",
+    initial: deriveInitial(author),
+  };
+}
+
 async function fetchOpenLibrary(isbn: string): Promise<BookInfo | null> {
   const edition = await fetchJson(`https://openlibrary.org/isbn/${isbn}.json`);
   if (!edition) {
@@ -299,15 +443,24 @@ async function fetchOpenLibrary(isbn: string): Promise<BookInfo | null> {
   }
 
   const title = String(edition.title ?? "");
-  const publishers = Array.isArray(edition.publishers) ? edition.publishers : [];
+  const publishers = Array.isArray(edition.publishers)
+    ? edition.publishers
+    : [];
   const publisher = String(publishers[0] ?? "");
   const publishDate = String(edition.publish_date ?? "");
-  const year = publishDate.split(/\D+/).filter(Boolean).at(-1) ?? "";
-  const pages = typeof edition.number_of_pages === "number" ? String(edition.number_of_pages) : "";
+  const dateParts = publishDate.split(/\D+/).filter(Boolean);
+  const year = dateParts.length > 0 ? dateParts[dateParts.length - 1] : "";
+  const pages =
+    typeof edition.number_of_pages === "number"
+      ? String(edition.number_of_pages)
+      : "";
 
   let author = "";
   const works = Array.isArray(edition.works) ? edition.works : [];
-  const workKey = works[0] && typeof works[0] === "object" ? String((works[0] as Record<string, unknown>).key ?? "") : "";
+  const workKey =
+    works[0] && typeof works[0] === "object"
+      ? String((works[0] as Record<string, unknown>).key ?? "")
+      : "";
 
   if (workKey) {
     const work = await fetchJson(`https://openlibrary.org${workKey}.json`);
@@ -315,9 +468,17 @@ async function fetchOpenLibrary(isbn: string): Promise<BookInfo | null> {
       const authorNames: string[] = [];
       for (const entry of work.authors) {
         if (!entry || typeof entry !== "object") continue;
-        const authorKey = String(((entry as Record<string, unknown>).author as Record<string, unknown> | undefined)?.key ?? "");
+        const authorKey = String(
+          (
+            (entry as Record<string, unknown>).author as
+              | Record<string, unknown>
+              | undefined
+          )?.key ?? "",
+        );
         if (!authorKey) continue;
-        const authorDoc = await fetchJson(`https://openlibrary.org${authorKey}.json`);
+        const authorDoc = await fetchJson(
+          `https://openlibrary.org${authorKey}.json`,
+        );
         if (authorDoc?.name) {
           authorNames.push(String(authorDoc.name));
         }
@@ -328,11 +489,17 @@ async function fetchOpenLibrary(isbn: string): Promise<BookInfo | null> {
 
   if (!author && title) {
     const search = await fetchJson(
-      `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&isbn=${encodeURIComponent(isbn)}&limit=1`
+      `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&isbn=${encodeURIComponent(isbn)}&limit=1`,
     );
     const docs = Array.isArray(search?.docs) ? search?.docs : [];
-    const authorNames = Array.isArray(docs[0] && typeof docs[0] === "object" ? (docs[0] as Record<string, unknown>).author_name : [])
-      ? ((docs[0] as Record<string, unknown>).author_name as unknown[]).map((value) => String(value))
+    const authorNames = Array.isArray(
+      docs[0] && typeof docs[0] === "object"
+        ? (docs[0] as Record<string, unknown>).author_name
+        : [],
+    )
+      ? ((docs[0] as Record<string, unknown>).author_name as unknown[]).map(
+          (value) => String(value),
+        )
       : [];
     author = authorNames.join(", ");
   }
@@ -347,28 +514,42 @@ async function fetchOpenLibrary(isbn: string): Promise<BookInfo | null> {
     language: "",
     type: "",
     dewey: "",
-    initial: deriveInitial(author)
+    initial: deriveInitial(author),
   };
 }
 
 async function fetchGoogleBooks(isbn: string): Promise<BookInfo | null> {
-  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`isbn:${isbn}`)}&maxResults=1`;
+  const params = new URLSearchParams({
+    q: `isbn:${isbn}`,
+    maxResults: "1",
+  });
+  const apiKey = deno.env.get("GOOGLE_BOOKS_API_KEY");
+  if (apiKey) {
+    params.set("key", apiKey);
+  }
+
+  const url = `https://www.googleapis.com/books/v1/volumes?${params.toString()}`;
   const root = await fetchJson(url);
   const items = Array.isArray(root?.items) ? root.items : [];
   const info =
     items[0] && typeof items[0] === "object"
-      ? ((items[0] as Record<string, unknown>).volumeInfo as Record<string, unknown> | undefined)
+      ? ((items[0] as Record<string, unknown>).volumeInfo as
+          | Record<string, unknown>
+          | undefined)
       : undefined;
 
   if (!info) {
-    return null;
+    return await fetchGoogleBooksWeb(isbn);
   }
 
   const title = String(info.title ?? "");
-  const authors = Array.isArray(info.authors) ? info.authors.map((value) => String(value)).join(", ") : "";
+  const authors = Array.isArray(info.authors)
+    ? info.authors.map((value) => String(value)).join(", ")
+    : "";
   const publisher = String(info.publisher ?? "");
   const year = String(info.publishedDate ?? "").slice(0, 4);
-  const pages = typeof info.pageCount === "number" ? String(info.pageCount) : "";
+  const pages =
+    typeof info.pageCount === "number" ? String(info.pageCount) : "";
 
   return {
     isbn,
@@ -380,7 +561,7 @@ async function fetchGoogleBooks(isbn: string): Promise<BookInfo | null> {
     language: "",
     type: "",
     dewey: "",
-    initial: deriveInitial(authors)
+    initial: deriveInitial(authors),
   };
 }
 
@@ -395,9 +576,9 @@ async function fetchWorldCat(isbn: string): Promise<BookInfo | null> {
     `https://www.worldcat.org/webservices/catalog/search/sru?query=${query}&wskey=&frbrGrouping=off&recordSchema=info:srw/schema/1/dc`,
     {
       headers: {
-        "User-Agent": "scan-to-lms-web/1.0"
-      }
-    }
+        "User-Agent": "scan-to-lms-web/1.0",
+      },
+    },
   );
 
   if (!response.ok) {
@@ -424,7 +605,7 @@ async function fetchWorldCat(isbn: string): Promise<BookInfo | null> {
     language: "",
     type: "",
     dewey: "",
-    initial: deriveInitial(author)
+    initial: deriveInitial(author),
   };
 }
 
@@ -433,23 +614,23 @@ async function callOpenAI(
   systemPrompt: string,
   prompt: string,
   partial: PartialBook,
-  allowModelMetadataWithoutPartial: boolean
+  allowModelMetadataWithoutPartial: boolean,
 ): Promise<CompletionResult | null> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: prompt }
+        { role: "user", content: prompt },
       ],
       temperature: 0.3,
-      max_tokens: 500
-    })
+      max_tokens: 500,
+    }),
   });
 
   if (!response.ok) {
@@ -469,7 +650,7 @@ async function callOpenAIWithWebSearch(
   apiKey: string,
   systemPrompt: string,
   prompt: string,
-  partial: PartialBook
+  partial: PartialBook,
 ): Promise<CompletionResult | null> {
   const toolVariants = ["web_search", "web_search_preview"];
 
@@ -478,24 +659,24 @@ async function callOpenAIWithWebSearch(
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: "gpt-4.1-mini",
         input: [
           {
             role: "system",
-            content: [{ type: "text", text: systemPrompt }]
+            content: [{ type: "text", text: systemPrompt }],
           },
           {
             role: "user",
-            content: [{ type: "text", text: prompt }]
-          }
+            content: [{ type: "text", text: prompt }],
+          },
         ],
         tools: [{ type: toolType }],
         temperature: 0.2,
-        max_output_tokens: 700
-      })
+        max_output_tokens: 700,
+      }),
     });
 
     if (!response.ok) {
@@ -517,7 +698,11 @@ async function callOpenAIWithWebSearch(
         }
         for (const content of item.content) {
           if (content?.text) {
-            const parsed = parseModelOutput(String(content.text), partial, true);
+            const parsed = parseModelOutput(
+              String(content.text),
+              partial,
+              true,
+            );
             if (parsed) {
               return parsed;
             }
@@ -531,15 +716,10 @@ async function callOpenAIWithWebSearch(
 }
 
 async function completeBookInfo(isbn: string): Promise<CompletionResult> {
-  const openAIKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAIKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
-
   let collected: BookInfo | null = null;
   const [openLibrary, googleBooks] = await Promise.allSettled([
     fetchOpenLibrary(isbn),
-    fetchGoogleBooks(isbn)
+    fetchGoogleBooks(isbn),
   ]);
 
   const openLib = openLibrary.status === "fulfilled" ? openLibrary.value : null;
@@ -556,7 +736,7 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
       language: openLib?.language || google?.language || "",
       type: openLib?.type || google?.type || "",
       dewey: openLib?.dewey || google?.dewey || "",
-      initial: openLib?.initial || google?.initial || ""
+      initial: openLib?.initial || google?.initial || "",
     };
   }
 
@@ -573,7 +753,7 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
         language: collected.language,
         type: collected.type,
         dewey: collected.dewey,
-        initial: collected.initial || worldcat.initial
+        initial: collected.initial || worldcat.initial,
       };
     }
   } else if (!collected) {
@@ -586,8 +766,8 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
           title: collected.title,
           author: collected.author,
           publisher: collected.publisher,
-          year: collected.year
-        }).filter(([, value]) => Boolean(value))
+          year: collected.year,
+        }).filter(([, value]) => Boolean(value)),
       )
     : {};
 
@@ -600,18 +780,38 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
             .map(([key, value]) => `- ${key}: ${value}`)
             .join("\n")}`
         : ""
-    }`
+    }`,
   );
 
+  const openAIKey = deno.env.get("OPENAI_API_KEY");
   let gptResult: CompletionResult | null = null;
-  if (hasReliablePartial) {
-    gptResult = await callOpenAI(openAIKey, normalSystemPrompt, prompt, partial, false).catch(() => null);
-  } else {
-    gptResult = await callOpenAIWithWebSearch(openAIKey, strictSystemPrompt, prompt, partial).catch(() => null);
-  }
+  if (openAIKey) {
+    if (hasReliablePartial) {
+      gptResult = await callOpenAI(
+        openAIKey,
+        normalSystemPrompt,
+        prompt,
+        partial,
+        false,
+      ).catch(() => null);
+    } else {
+      gptResult = await callOpenAIWithWebSearch(
+        openAIKey,
+        strictSystemPrompt,
+        prompt,
+        partial,
+      ).catch(() => null);
+    }
 
-  if (!gptResult) {
-    gptResult = await callOpenAI(openAIKey, strictSystemPrompt, prompt, partial, false).catch(() => null);
+    if (!gptResult) {
+      gptResult = await callOpenAI(
+        openAIKey,
+        strictSystemPrompt,
+        prompt,
+        partial,
+        false,
+      ).catch(() => null);
+    }
   }
 
   if (gptResult) {
@@ -626,7 +826,7 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
       language: collected?.language || gptResult.language,
       type: collected?.type || gptResult.type,
       dewey: collected?.dewey || gptResult.dewey,
-      initial: collected?.initial || gptResult.initial || deriveInitial(author)
+      initial: collected?.initial || gptResult.initial || deriveInitial(author),
     };
   }
 
@@ -642,7 +842,7 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
       language: collected.language || fallback.language,
       type: collected.type || fallback.type,
       dewey: collected.dewey || fallback.dewey,
-      initial: collected.initial || deriveInitial(collected.author)
+      initial: collected.initial || deriveInitial(collected.author),
     };
   }
 
@@ -656,11 +856,11 @@ async function completeBookInfo(isbn: string): Promise<CompletionResult> {
     language: "Others",
     type: "",
     dewey: "",
-    initial: ""
+    initial: "",
   };
 }
 
-Deno.serve(async (request) => {
+deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -671,7 +871,9 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: "ISBN is required" }, { status: 400 });
     }
 
-    const result = await completeBookInfo(isbn.replace(/[^\dXx]/g, "").toUpperCase());
+    const result = await completeBookInfo(
+      isbn.replace(/[^\dXx]/g, "").toUpperCase(),
+    );
     return jsonResponse(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
