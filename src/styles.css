@@ -12,6 +12,8 @@
     --review: rgba(226, 182, 44, 0.22);
     --rejected: rgba(213, 71, 71, 0.18);
     --neutral: rgba(83, 92, 118, 0.14);
+    --info: #2f73ff;
+    --info-deep: #1f57d7;
     --shadow: 0 20px 50px rgba(91, 52, 24, 0.12);
     font-family:
         "Avenir Next", "SF Pro Rounded", ui-rounded, system-ui, sans-serif;
@@ -137,6 +139,19 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
+}
+
+.check-entry-button {
+    width: 100%;
+    margin-bottom: 16px;
+    border: 0;
+    border-radius: 24px;
+    padding: 16px 18px;
+    background: linear-gradient(180deg, var(--info), var(--info-deep));
+    color: white;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    box-shadow: 0 18px 34px rgba(31, 87, 215, 0.26);
 }
 
 .stat-card {
@@ -390,6 +405,63 @@ button {
     color: white;
     font-weight: 700;
     box-shadow: 0 22px 40px rgba(202, 67, 53, 0.28);
+}
+
+.subpage-header {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 14px;
+}
+
+.page-back-button {
+    min-width: 104px;
+}
+
+.check-screen-panel,
+.result-screen-panel {
+    min-height: min(72vh, 720px);
+}
+
+.check-screen-body {
+    min-height: min(58vh, 520px);
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 14px;
+    text-align: center;
+}
+
+.check-scan-button {
+    min-width: 180px;
+    padding-left: 26px;
+    padding-right: 26px;
+}
+
+.check-screen-description,
+.result-screen-subtitle {
+    margin: 0;
+    color: var(--muted);
+}
+
+.processed-book-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.processed-book-card {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid var(--line);
+}
+
+.processed-book-line {
+    margin: 0;
+    line-height: 1.5;
+    word-break: break-word;
 }
 
 .toast {

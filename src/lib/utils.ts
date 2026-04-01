@@ -3,6 +3,7 @@ import type {
   BookLanguage,
   BookRecord,
   BooksFilterState,
+  ProcessedBookRecord,
 } from "../types";
 
 export function normalizeIsbn(value: string): string {
@@ -256,4 +257,67 @@ export function timestampFilename(prefix: string): string {
     String(now.getSeconds()).padStart(2, "0"),
   ];
   return `${prefix}_${parts.join("")}.csv`;
+}
+
+function parseCsvRow(row: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index];
+
+    if (char === '"') {
+      const nextChar = row[index + 1];
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+export function parseProcessedBooksCsv(csv: string): ProcessedBookRecord[] {
+  const rows = csv
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((row) => row.trim().length > 0);
+
+  return rows
+    .slice(1)
+    .map((row) => {
+      const cells = parseCsvRow(row);
+      const values = Array.from({ length: 13 }, (_, index) => cells[index] ?? "");
+
+      return {
+        noPerolehan: values[0],
+        isbn: values[1],
+        title: values[2],
+        author: values[3],
+        publisher: values[4],
+        year: values[5],
+        pages: values[6],
+        price: values[7],
+        language: values[8],
+        type: values[9],
+        dewey: values[10],
+        initial: values[11],
+        quantity: values[12],
+      };
+    })
+    .filter((book) => book.isbn.length > 0);
 }

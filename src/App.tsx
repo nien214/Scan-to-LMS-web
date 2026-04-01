@@ -8,14 +8,17 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   Ellipsis,
   Eye,
   Flag,
   LoaderCircle,
+  ScanLine,
   Search,
   SquareArrowOutUpRight,
   Trash2,
 } from "lucide-react";
+import processedBooksCsv from "./components/book.csv?raw";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import {
   deriveInitial,
@@ -24,6 +27,7 @@ import {
   isBookIncomplete,
   normalizeDraft,
   normalizeIsbn,
+  parseProcessedBooksCsv,
   shareOrDownloadCsv,
   shouldHideBook,
   sortBooks,
@@ -35,6 +39,7 @@ import type {
   BookRecord,
   BooksFilterState,
   CompletionResult,
+  ProcessedBookRecord,
 } from "./types";
 import { defaultFilters } from "./types";
 
@@ -76,9 +81,30 @@ type DetailState = {
   isCurrentlyRejected: boolean;
 };
 type QuickFilterMode = "accepted" | "review" | "rejected" | "flagged";
+type AppView = "home" | "processed-check" | "processed-results";
+type ScannerMode = "library" | "processed-check";
 
 const SUPABASE_CONFIG_MESSAGE =
   "Add VITE_SUPABASE_ANON_KEY to connect this web app to your Supabase project.";
+const PROCESSED_BOOK_RESULT_ALERT_DELAY_MS = 450;
+const PROCESSED_BOOK_FIELDS: Array<{
+  key: keyof ProcessedBookRecord;
+  label: string;
+}> = [
+  { key: "noPerolehan", label: "No Perolehan" },
+  { key: "isbn", label: "ISBN" },
+  { key: "title", label: "Title" },
+  { key: "author", label: "Author" },
+  { key: "publisher", label: "Publisher" },
+  { key: "year", label: "Year" },
+  { key: "pages", label: "Pages" },
+  { key: "price", label: "Price" },
+  { key: "language", label: "Language" },
+  { key: "type", label: "Type" },
+  { key: "dewey", label: "Dewey" },
+  { key: "initial", label: "Initial" },
+  { key: "quantity", label: "Quantity" },
+];
 
 export default function App() {
   const [books, setBooks] = useState<BookRecord[]>([]);
@@ -97,6 +123,12 @@ export default function App() {
   const [busyAction, setBusyAction] = useState(false);
   const [menuState, setMenuState] = useState<MenuState>(null);
   const [rowMenuBook, setRowMenuBook] = useState<BookRecord | null>(null);
+  const [appView, setAppView] = useState<AppView>("home");
+  const [scannerMode, setScannerMode] = useState<ScannerMode>("library");
+  const [processedLookupIsbn, setProcessedLookupIsbn] = useState("");
+  const [processedBookResults, setProcessedBookResults] = useState<
+    ProcessedBookRecord[]
+  >([]);
 
   useEffect(() => {
     const client = supabase;
@@ -145,6 +177,29 @@ export default function App() {
   }, [toast]);
 
   const sortedBooks = useMemo(() => sortBooks(books), [books]);
+  const processedBooks = useMemo(
+    () => parseProcessedBooksCsv(processedBooksCsv),
+    [],
+  );
+  const processedBooksByIsbn = useMemo(() => {
+    const lookup = new Map<string, ProcessedBookRecord[]>();
+
+    for (const book of processedBooks) {
+      const normalized = normalizeIsbn(book.isbn);
+      if (!normalized) {
+        continue;
+      }
+
+      const existing = lookup.get(normalized);
+      if (existing) {
+        existing.push(book);
+      } else {
+        lookup.set(normalized, [book]);
+      }
+    }
+
+    return lookup;
+  }, [processedBooks]);
   const visibleBooks = useMemo(
     () => sortedBooks.filter((book) => !shouldHideBook(book, filters)),
     [filters, sortedBooks],
@@ -536,176 +591,277 @@ export default function App() {
     });
   };
 
+  function resetScannerState() {
+    setScannerBusy(false);
+    setScannerStatus("Position barcode in frame");
+  }
+
+  function openLibraryScanner() {
+    setScannerMode("library");
+    resetScannerState();
+    setScannerOpen(true);
+  }
+
+  function openProcessedLookup() {
+    setMenuState(null);
+    setRowMenuBook(null);
+    setDetailState(null);
+    setProcessedLookupIsbn("");
+    setProcessedBookResults([]);
+    setAppView("processed-check");
+  }
+
+  function backToHome() {
+    setProcessedLookupIsbn("");
+    setProcessedBookResults([]);
+    setAppView("home");
+  }
+
+  function backToProcessedLookup() {
+    setProcessedLookupIsbn("");
+    setProcessedBookResults([]);
+    setAppView("processed-check");
+  }
+
+  function openProcessedLookupScanner() {
+    setScannerMode("processed-check");
+    setScannerBusy(false);
+    setScannerStatus("Scan ISBN to check processed details");
+    setScannerOpen(true);
+  }
+
+  function handleProcessedBookLookup(rawIsbn: string) {
+    const isbn = normalizeIsbn(rawIsbn);
+    if (!isbn) {
+      setToast("Invalid ISBN detected");
+      return;
+    }
+
+    setScannerBusy(true);
+    setScannerStatus("Checking processed book...");
+
+    const matches = processedBooksByIsbn.get(isbn) ?? [];
+
+    setProcessedLookupIsbn(isbn);
+    setProcessedBookResults(matches);
+    setScannerOpen(false);
+    resetScannerState();
+
+    if (matches.length === 0) {
+      setAppView("processed-check");
+      window.setTimeout(() => {
+        window.alert("This book is not processed.");
+      }, PROCESSED_BOOK_RESULT_ALERT_DELAY_MS);
+      return;
+    }
+
+    setAppView("processed-results");
+  }
+
+  async function handleScannerDetected(rawIsbn: string) {
+    if (scannerMode === "processed-check") {
+      handleProcessedBookLookup(rawIsbn);
+      return;
+    }
+
+    await handleDetected(rawIsbn);
+  }
+
   return (
     <>
       <div className="page-shell">
-        <div className="app-shell">
-          <header className="topbar">
-            <div>
-              <h1>Scan to LMS</h1>
-            </div>
-            <div className="toolbar-actions">
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setMenuState("filters")}
-              >
-                <Eye size={18} />
-              </button>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setMenuState("export")}
-                disabled={books.length === 0}
-              >
-                <SquareArrowOutUpRight size={18} />
-              </button>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setMenuState("clear")}
-                disabled={books.length === 0}
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          </header>
-
-          <section className="stats-row">
-            <StatCard
-              label="Accepted"
-              value={acceptedBooks.length}
-              tone="accepted"
-              active={isQuickFilterActive("accepted")}
-              onClick={() => toggleQuickFilter("accepted")}
-            />
-            <StatCard
-              label="Need Review"
-              value={needReviewBooks.length}
-              tone="review"
-              active={isQuickFilterActive("review")}
-              onClick={() => toggleQuickFilter("review")}
-            />
-            <StatCard
-              label="Rejected"
-              value={rejectedBooks.length}
-              tone="rejected"
-              active={isQuickFilterActive("rejected")}
-              onClick={() => toggleQuickFilter("rejected")}
-            />
-            <StatCard
-              label="Flagged"
-              value={flaggedBooks.length}
-              tone="neutral"
-              active={isQuickFilterActive("flagged")}
-              onClick={() => toggleQuickFilter("flagged")}
-            />
-          </section>
-
-          {appError ? (
-            <div className="banner banner-danger">
-              <AlertTriangle size={18} />
-              <p>{appError}</p>
-            </div>
-          ) : null}
-
-          <section className="list-panel">
-            <div className="section-heading">
-              <div>
-                <p className="section-kicker">Library Queue</p>
-                <h2>{headerTitle}</h2>
-              </div>
-              <span className="count-pill">{visibleBooks.length}</span>
-            </div>
-
-            {isLoading ? (
-              <div className="empty-state">
-                <LoaderCircle className="spin" size={28} />
-                <p>Loading books from Supabase...</p>
-              </div>
-            ) : books.length === 0 ? (
-              <div className="empty-state">
-                <Search size={26} />
-                <p>No books yet. Tap Scan to capture an ISBN barcode.</p>
-              </div>
-            ) : (
-              <div className="book-list">
-                {visibleBooks.map((book) => (
-                  <article
-                    className={`book-row ${getRowTone(book)}`}
-                    key={book.id}
-                    onClick={() => openBook(book)}
+        {appView === "home" ? (
+          <>
+            <div className="app-shell">
+              <header className="topbar">
+                <div>
+                  <h1>Scan to LMS</h1>
+                </div>
+                <div className="toolbar-actions">
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => setMenuState("filters")}
                   >
-                    <div className="book-row-main">
-                      <div className="book-title-row">
-                        {isBookIncomplete(book) ? (
-                          <AlertTriangle size={14} />
-                        ) : null}
-                        {book.isFlagged ? <Flag size={14} /> : null}
-                        <h3>{book.title || "(Unknown title)"}</h3>
-                      </div>
-                      <p className="book-meta">ISBN: {book.isbn}</p>
-                    </div>
+                    <Eye size={18} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => setMenuState("export")}
+                    disabled={books.length === 0}
+                  >
+                    <SquareArrowOutUpRight size={18} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => setMenuState("clear")}
+                    disabled={books.length === 0}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </header>
 
-                    <div className="book-row-actions">
-                      <button
-                        className={
-                          book.isFlagged ? "icon-button toggled" : "icon-button"
-                        }
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void toggleFlag(book);
-                        }}
+              {appError ? (
+                <div className="banner banner-danger">
+                  <AlertTriangle size={18} />
+                  <p>{appError}</p>
+                </div>
+              ) : null}
+
+              <button
+                className="check-entry-button"
+                type="button"
+                onClick={openProcessedLookup}
+              >
+                CHECK No. Perolehan
+              </button>
+
+              <section className="stats-row">
+                <StatCard
+                  label="Accepted"
+                  value={acceptedBooks.length}
+                  tone="accepted"
+                  active={isQuickFilterActive("accepted")}
+                  onClick={() => toggleQuickFilter("accepted")}
+                />
+                <StatCard
+                  label="Need Review"
+                  value={needReviewBooks.length}
+                  tone="review"
+                  active={isQuickFilterActive("review")}
+                  onClick={() => toggleQuickFilter("review")}
+                />
+                <StatCard
+                  label="Rejected"
+                  value={rejectedBooks.length}
+                  tone="rejected"
+                  active={isQuickFilterActive("rejected")}
+                  onClick={() => toggleQuickFilter("rejected")}
+                />
+                <StatCard
+                  label="Flagged"
+                  value={flaggedBooks.length}
+                  tone="neutral"
+                  active={isQuickFilterActive("flagged")}
+                  onClick={() => toggleQuickFilter("flagged")}
+                />
+              </section>
+
+              <section className="list-panel">
+                <div className="section-heading">
+                  <div>
+                    <p className="section-kicker">Library Queue</p>
+                    <h2>{headerTitle}</h2>
+                  </div>
+                  <span className="count-pill">{visibleBooks.length}</span>
+                </div>
+
+                {isLoading ? (
+                  <div className="empty-state">
+                    <LoaderCircle className="spin" size={28} />
+                    <p>Loading books from Supabase...</p>
+                  </div>
+                ) : books.length === 0 ? (
+                  <div className="empty-state">
+                    <Search size={26} />
+                    <p>No books yet. Tap Scan to capture an ISBN barcode.</p>
+                  </div>
+                ) : (
+                  <div className="book-list">
+                    {visibleBooks.map((book) => (
+                      <article
+                        className={`book-row ${getRowTone(book)}`}
+                        key={book.id}
+                        onClick={() => openBook(book)}
                       >
-                        <Flag size={16} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        type="button"
-                        aria-label="Open book menu"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setRowMenuBook(book);
-                        }}
-                      >
-                        <Ellipsis size={16} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+                        <div className="book-row-main">
+                          <div className="book-title-row">
+                            {isBookIncomplete(book) ? (
+                              <AlertTriangle size={14} />
+                            ) : null}
+                            {book.isFlagged ? <Flag size={14} /> : null}
+                            <h3>{book.title || "(Unknown title)"}</h3>
+                          </div>
+                          <p className="book-meta">ISBN: {book.isbn}</p>
+                        </div>
 
-          {books.length > 0 ? (
-            <footer className="legend-bar">
-              <LegendItem
-                label="Accepted"
-                tone="accepted"
-                hidden={filters.hideAcceptedBooks}
-              />
-              <LegendItem
-                label="Need Review"
-                tone="review"
-                hidden={filters.hideIncompleteBooks}
-              />
-              <LegendItem
-                label="Rejected"
-                tone="rejected"
-                hidden={filters.hideRejectedBooks}
-              />
-            </footer>
-          ) : null}
-        </div>
+                        <div className="book-row-actions">
+                          <button
+                            className={
+                              book.isFlagged
+                                ? "icon-button toggled"
+                                : "icon-button"
+                            }
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void toggleFlag(book);
+                            }}
+                          >
+                            <Flag size={16} />
+                          </button>
+                          <button
+                            className="icon-button"
+                            type="button"
+                            aria-label="Open book menu"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setRowMenuBook(book);
+                            }}
+                          >
+                            <Ellipsis size={16} />
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
 
-        <button
-          className="scan-fab"
-          type="button"
-          onClick={() => setScannerOpen(true)}
-        >
-          Scan
-        </button>
+              {books.length > 0 ? (
+                <footer className="legend-bar">
+                  <LegendItem
+                    label="Accepted"
+                    tone="accepted"
+                    hidden={filters.hideAcceptedBooks}
+                  />
+                  <LegendItem
+                    label="Need Review"
+                    tone="review"
+                    hidden={filters.hideIncompleteBooks}
+                  />
+                  <LegendItem
+                    label="Rejected"
+                    tone="rejected"
+                    hidden={filters.hideRejectedBooks}
+                  />
+                </footer>
+              ) : null}
+            </div>
+
+            <button
+              className="scan-fab"
+              type="button"
+              onClick={openLibraryScanner}
+            >
+              Scan
+            </button>
+          </>
+        ) : appView === "processed-check" ? (
+          <ProcessedLookupView
+            onBack={backToHome}
+            onScan={openProcessedLookupScanner}
+          />
+        ) : (
+          <ProcessedLookupResultsView
+            isbn={processedLookupIsbn}
+            books={processedBookResults}
+            onBack={backToProcessedLookup}
+          />
+        )}
 
         {toast ? <div className="toast">{toast}</div> : null}
       </div>
@@ -720,7 +876,7 @@ export default function App() {
               setScannerOpen(false);
             }
           }}
-          onDetected={handleDetected}
+          onDetected={handleScannerDetected}
         />
 
         <DetailSheet
@@ -937,6 +1093,104 @@ export default function App() {
         />
       </ActionSheet>
     </>
+  );
+}
+
+function ProcessedLookupView({
+  onBack,
+  onScan,
+}: {
+  onBack: () => void;
+  onScan: () => void;
+}) {
+  return (
+    <div className="app-shell">
+      <div className="subpage-header">
+        <button
+          className="secondary-button page-back-button"
+          type="button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={18} />
+          Back
+        </button>
+      </div>
+
+      <section className="list-panel check-screen-panel">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Processed Lookup</p>
+            <h2>CHECK No. Perolehan</h2>
+          </div>
+        </div>
+
+        <div className="check-screen-body">
+          <button
+            className="primary-button check-scan-button"
+            type="button"
+            onClick={onScan}
+          >
+            <ScanLine size={20} />
+            Scan
+          </button>
+          <p className="check-screen-description">
+            Tap Scan button to view processed book details.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProcessedLookupResultsView({
+  isbn,
+  books,
+  onBack,
+}: {
+  isbn: string;
+  books: ProcessedBookRecord[];
+  onBack: () => void;
+}) {
+  return (
+    <div className="app-shell">
+      <div className="subpage-header">
+        <button
+          className="secondary-button page-back-button"
+          type="button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={18} />
+          Back
+        </button>
+      </div>
+
+      <section className="list-panel result-screen-panel">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Processed Lookup</p>
+            <h2>Result</h2>
+          </div>
+          <span className="count-pill">{books.length}</span>
+        </div>
+
+        <p className="result-screen-subtitle">ISBN: {isbn}</p>
+
+        <div className="processed-book-list">
+          {books.map((book, index) => (
+            <article
+              className="processed-book-card"
+              key={`${book.noPerolehan}-${book.isbn}-${index}`}
+            >
+              {PROCESSED_BOOK_FIELDS.map((field) => (
+                <p className="processed-book-line" key={field.key}>
+                  <strong>{field.label}:</strong> {book[field.key] || "-"}
+                </p>
+              ))}
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 

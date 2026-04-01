@@ -23,6 +23,22 @@ export type BookRecord = {
 
 export type BookDraft = Omit<BookRecord, "id" | "createdAt" | "updatedAt">;
 
+export type ProcessedBookRecord = {
+  noPerolehan: string;
+  isbn: string;
+  title: string;
+  author: string;
+  publisher: string;
+  year: string;
+  pages: string;
+  price: string;
+  language: string;
+  type: string;
+  dewey: string;
+  initial: string;
+  quantity: string;
+};
+
 export type BooksFilterState = {
   hideRejectedBooks: boolean;
   hideFlaggedBooks: boolean;
