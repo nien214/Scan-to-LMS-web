@@ -21,7 +21,6 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import bundledProcessedBooksCsv from "./components/book.csv?raw";
 import {
   clearProcessedDatabaseClientCache,
   getProcessedDatabaseErrorMessage,
@@ -39,7 +38,6 @@ import {
   isBookIncomplete,
   normalizeDraft,
   normalizeIsbn,
-  parseProcessedBooksCsv,
   shareOrDownloadCsv,
   shouldHideBook,
   sortBooks,
@@ -99,7 +97,7 @@ type ProcessedDatabaseState = {
   fileName: string;
   rowCount: number;
   uploadedAt: string | null;
-  source: "bundled" | "supabase";
+  source: "empty" | "supabase";
 };
 
 const SUPABASE_CONFIG_MESSAGE =
@@ -125,10 +123,6 @@ const PROCESSED_BOOK_FIELDS: Array<{
 ];
 
 export default function App() {
-  const bundledProcessedBooks = useMemo(
-    () => parseProcessedBooksCsv(bundledProcessedBooksCsv),
-    [],
-  );
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [appError, setAppError] = useState<string | null>(
@@ -151,15 +145,13 @@ export default function App() {
   const [processedBookResults, setProcessedBookResults] = useState<
     ProcessedBookRecord[]
   >([]);
-  const [processedBooks, setProcessedBooks] = useState<ProcessedBookRecord[]>(
-    () => bundledProcessedBooks,
-  );
+  const [processedBooks, setProcessedBooks] = useState<ProcessedBookRecord[]>([]);
   const [processedDatabaseState, setProcessedDatabaseState] =
     useState<ProcessedDatabaseState>(() => ({
-      fileName: "book.csv",
-      rowCount: bundledProcessedBooks.length,
+      fileName: "No shared database",
+      rowCount: 0,
       uploadedAt: null,
-      source: "bundled",
+      source: "empty",
     }));
   const [processedDatabaseReady, setProcessedDatabaseReady] = useState(false);
   const [processedDatabaseUploading, setProcessedDatabaseUploading] =
@@ -265,37 +257,41 @@ export default function App() {
       return "Loading processed database...";
     }
 
+    if (processedDatabaseState.source === "empty") {
+      return "No shared database uploaded yet. Upload a CSV or XLSX file to enable processed lookup on all devices.";
+    }
+
     const details = [
       `${processedDatabaseState.rowCount.toLocaleString()} rows`,
       processedDatabaseState.source === "supabase" &&
       processedDatabaseState.uploadedAt
         ? `Synced ${new Date(processedDatabaseState.uploadedAt).toLocaleString()}`
-        : "Bundled fallback",
+        : "",
     ];
 
-    return `Current database: ${processedDatabaseState.fileName} • ${details.join(" • ")}`;
+    return `Current database: ${processedDatabaseState.fileName} • ${details.filter(Boolean).join(" • ")}`;
   }, [processedDatabaseReady, processedDatabaseState]);
 
   useEffect(() => {
     let ignore = false;
 
-    const applyBundledProcessedDatabase = () => {
+    const applyEmptyProcessedDatabase = () => {
       if (ignore) {
         return;
       }
 
-      setProcessedBooks(bundledProcessedBooks);
+      setProcessedBooks([]);
       setProcessedDatabaseState({
-        fileName: "book.csv",
-        rowCount: bundledProcessedBooks.length,
+        fileName: "No shared database",
+        rowCount: 0,
         uploadedAt: null,
-        source: "bundled",
+        source: "empty",
       });
     };
 
     const syncProcessedDatabase = async () => {
       if (!supabase) {
-        applyBundledProcessedDatabase();
+        applyEmptyProcessedDatabase();
         if (!ignore) {
           setProcessedDatabaseReady(true);
         }
@@ -305,7 +301,7 @@ export default function App() {
       try {
         const sharedDatabase = await loadProcessedDatabaseFromSupabase(supabase);
         if (!sharedDatabase) {
-          applyBundledProcessedDatabase();
+          applyEmptyProcessedDatabase();
           return;
         }
 
@@ -322,7 +318,7 @@ export default function App() {
         });
       } catch (error) {
         console.error("Unable to load shared processed database", error);
-        applyBundledProcessedDatabase();
+        applyEmptyProcessedDatabase();
       } finally {
         if (!ignore) {
           setProcessedDatabaseReady(true);
@@ -354,7 +350,7 @@ export default function App() {
       ignore = true;
       void client.removeChannel(channel);
     };
-  }, [bundledProcessedBooks]);
+  }, []);
 
   function getQuickFilterPreset(mode: QuickFilterMode): BooksFilterState {
     switch (mode) {
@@ -765,6 +761,11 @@ export default function App() {
       return;
     }
 
+    if (processedDatabaseState.rowCount === 0) {
+      setToast("Upload a shared database first");
+      return;
+    }
+
     setScannerMode("processed-check");
     setScannerBusy(false);
     setScannerStatus("Scan ISBN to check processed details");
@@ -847,6 +848,11 @@ export default function App() {
   function handleProcessedBookLookup(rawIsbn: string) {
     if (!processedDatabaseReady) {
       setToast("Processed database is still loading");
+      return;
+    }
+
+    if (processedDatabaseState.rowCount === 0) {
+      setToast("Upload a shared database first");
       return;
     }
 

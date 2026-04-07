@@ -52,7 +52,7 @@ npm run dev
 
 - The `CHECK No. Perolehan` screen now accepts `.csv`, `.xlsx`, and `.xls` uploads.
 - The latest uploaded database is parsed in the app and the resulting records are stored in `public.processed_database_files` as the shared lookup source for all devices.
-- The app reads the current shared database metadata from `public.processed_database_files` and falls back to bundled `book.csv` only when no shared upload exists.
+- The app reads the current shared database metadata from `public.processed_database_files`. If no shared upload exists yet, processed lookup stays unavailable until a database is uploaded.
 - Open devices subscribe to `processed_database_files` changes through Supabase Realtime and refresh when a new database is uploaded.
 
 ## Production notes

@@ -275,21 +275,21 @@ const PROCESSED_BOOK_FIELD_KEYS: Array<keyof ProcessedBookRecord> = [
   "quantity",
 ];
 
-const PROCESSED_BOOK_HEADER_MAP: Record<string, keyof ProcessedBookRecord> = {
-  noperolehan: "noPerolehan",
-  isbn: "isbn",
-  title: "title",
-  author: "author",
-  publisher: "publisher",
-  year: "year",
-  pages: "pages",
-  price: "price",
-  language: "language",
-  type: "type",
-  dewey: "dewey",
-  initial: "initial",
-  quantity: "quantity",
-};
+const PROCESSED_BOOK_HEADER_LABELS = [
+  "No Perolehan",
+  "ISBN",
+  "Title",
+  "Author",
+  "Publisher",
+  "Year",
+  "Pages",
+  "Price",
+  "Language",
+  "Type",
+  "Dewey",
+  "Initial",
+  "Quantity",
+] as const;
 
 function normalizeProcessedBookHeader(value: unknown): string {
   return String(value ?? "")
@@ -302,23 +302,26 @@ function normalizeProcessedBookCell(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function getProcessedBookColumnIndexes(headerRow: unknown[]): number[] {
-  const mappedIndexes = new Map<keyof ProcessedBookRecord, number>();
+function validateProcessedBookHeaders(headerRow: unknown[]): void {
+  const actualHeaders = headerRow.map((cell) => normalizeProcessedBookCell(cell));
+  const normalizedHeaders = actualHeaders.map((header) =>
+    normalizeProcessedBookHeader(header),
+  );
 
-  headerRow.forEach((cell, index) => {
-    const mappedKey =
-      PROCESSED_BOOK_HEADER_MAP[normalizeProcessedBookHeader(cell)];
-    if (mappedKey && !mappedIndexes.has(mappedKey)) {
-      mappedIndexes.set(mappedKey, index);
-    }
-  });
+  const hasExpectedHeaders = PROCESSED_BOOK_HEADER_LABELS.every(
+    (expectedHeader, index) =>
+      normalizedHeaders[index] === normalizeProcessedBookHeader(expectedHeader),
+  );
+  const hasOnlyEmptyTrailingHeaders = normalizedHeaders
+    .slice(PROCESSED_BOOK_HEADER_LABELS.length)
+    .every((header) => header.length === 0);
 
-  if (mappedIndexes.size === 0) {
-    return PROCESSED_BOOK_FIELD_KEYS.map((_, index) => index);
+  if (hasExpectedHeaders && hasOnlyEmptyTrailingHeaders) {
+    return;
   }
 
-  return PROCESSED_BOOK_FIELD_KEYS.map(
-    (fieldKey, index) => mappedIndexes.get(fieldKey) ?? index,
+  throw new Error(
+    `Invalid database headers. Expected: ${PROCESSED_BOOK_HEADER_LABELS.join(", ")}`,
   );
 }
 
@@ -331,14 +334,13 @@ export function parseProcessedBooksTable(rows: Array<unknown[]>): ProcessedBookR
     return [];
   }
 
-  const columnIndexes = getProcessedBookColumnIndexes(headerRow);
+  validateProcessedBookHeaders(headerRow);
 
   return dataRows
     .map((row) => {
-      const values = PROCESSED_BOOK_FIELD_KEYS.map((fieldKey, index) => {
-        const cellIndex = columnIndexes[index];
-        return normalizeProcessedBookCell(row[cellIndex]);
-      });
+      const values = PROCESSED_BOOK_FIELD_KEYS.map((_, index) =>
+        normalizeProcessedBookCell(row[index]),
+      );
 
       return {
         noPerolehan: values[0],
