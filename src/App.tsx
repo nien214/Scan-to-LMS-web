@@ -1,9 +1,11 @@
 import {
   Suspense,
+  type ChangeEvent,
   lazy,
   startTransition,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -17,8 +19,17 @@ import {
   Search,
   SquareArrowOutUpRight,
   Trash2,
+  Upload,
 } from "lucide-react";
-import processedBooksCsv from "./components/book.csv?raw";
+import bundledProcessedBooksCsv from "./components/book.csv?raw";
+import {
+  PROCESSED_DATABASE_FILE_ACCEPT,
+  isSupportedProcessedDatabaseFile,
+  loadStoredProcessedDatabase,
+  mirrorProcessedDatabaseToSource,
+  parseProcessedDatabaseFile,
+  saveStoredProcessedDatabase,
+} from "./lib/processedDatabase";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import {
   deriveInitial,
@@ -83,6 +94,12 @@ type DetailState = {
 type QuickFilterMode = "accepted" | "review" | "rejected" | "flagged";
 type AppView = "home" | "processed-check" | "processed-results";
 type ScannerMode = "library" | "processed-check";
+type ProcessedDatabaseState = {
+  fileName: string;
+  rowCount: number;
+  uploadedAt: string | null;
+  source: "bundled" | "uploaded";
+};
 
 const SUPABASE_CONFIG_MESSAGE =
   "Add VITE_SUPABASE_ANON_KEY to connect this web app to your Supabase project.";
@@ -107,6 +124,10 @@ const PROCESSED_BOOK_FIELDS: Array<{
 ];
 
 export default function App() {
+  const bundledProcessedBooks = useMemo(
+    () => parseProcessedBooksCsv(bundledProcessedBooksCsv),
+    [],
+  );
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [appError, setAppError] = useState<string | null>(
@@ -129,6 +150,20 @@ export default function App() {
   const [processedBookResults, setProcessedBookResults] = useState<
     ProcessedBookRecord[]
   >([]);
+  const [processedBooks, setProcessedBooks] = useState<ProcessedBookRecord[]>(
+    () => bundledProcessedBooks,
+  );
+  const [processedDatabaseState, setProcessedDatabaseState] =
+    useState<ProcessedDatabaseState>(() => ({
+      fileName: "book.csv",
+      rowCount: bundledProcessedBooks.length,
+      uploadedAt: null,
+      source: "bundled",
+    }));
+  const [processedDatabaseReady, setProcessedDatabaseReady] = useState(false);
+  const [processedDatabaseUploading, setProcessedDatabaseUploading] =
+    useState(false);
+  const processedDatabaseInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const client = supabase;
@@ -177,10 +212,6 @@ export default function App() {
   }, [toast]);
 
   const sortedBooks = useMemo(() => sortBooks(books), [books]);
-  const processedBooks = useMemo(
-    () => parseProcessedBooksCsv(processedBooksCsv),
-    [],
-  );
   const processedBooksByIsbn = useMemo(() => {
     const lookup = new Map<string, ProcessedBookRecord[]>();
 
@@ -224,6 +255,52 @@ export default function App() {
   const detailExistingBook = detailState
     ? (books.find((entry) => entry.isbn === detailState.draft.isbn) ?? null)
     : null;
+  const processedDatabaseSummary = useMemo(() => {
+    if (!processedDatabaseReady) {
+      return "Loading processed database...";
+    }
+
+    const details = [
+      `${processedDatabaseState.rowCount.toLocaleString()} rows`,
+      processedDatabaseState.source === "uploaded" &&
+      processedDatabaseState.uploadedAt
+        ? `Uploaded ${new Date(processedDatabaseState.uploadedAt).toLocaleString()}`
+        : "Bundled fallback",
+    ];
+
+    return `Current database: ${processedDatabaseState.fileName} • ${details.join(" • ")}`;
+  }, [processedDatabaseReady, processedDatabaseState]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    void (async () => {
+      try {
+        const storedDatabase = await loadStoredProcessedDatabase();
+        if (!storedDatabase || ignore) {
+          return;
+        }
+
+        setProcessedBooks(storedDatabase.records);
+        setProcessedDatabaseState({
+          fileName: storedDatabase.fileName,
+          rowCount: storedDatabase.records.length,
+          uploadedAt: storedDatabase.uploadedAt,
+          source: "uploaded",
+        });
+      } catch (error) {
+        console.error("Unable to restore uploaded processed database", error);
+      } finally {
+        if (!ignore) {
+          setProcessedDatabaseReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   function getQuickFilterPreset(mode: QuickFilterMode): BooksFilterState {
     switch (mode) {
@@ -624,13 +701,92 @@ export default function App() {
   }
 
   function openProcessedLookupScanner() {
+    if (!processedDatabaseReady) {
+      setToast("Processed database is still loading");
+      return;
+    }
+
+    if (processedDatabaseUploading) {
+      setToast("Wait for the database upload to finish");
+      return;
+    }
+
     setScannerMode("processed-check");
     setScannerBusy(false);
     setScannerStatus("Scan ISBN to check processed details");
     setScannerOpen(true);
   }
 
+  async function handleProcessedDatabaseUpload(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!isSupportedProcessedDatabaseFile(file)) {
+      setToast("Upload a CSV or Excel file");
+      return;
+    }
+
+    setProcessedDatabaseUploading(true);
+
+    try {
+      const records = await parseProcessedDatabaseFile(file);
+      if (records.length === 0) {
+        throw new Error("No valid rows found in the uploaded database");
+      }
+
+      let uploadedAt = new Date().toISOString();
+
+      try {
+        const storedDatabase = await saveStoredProcessedDatabase(file, records);
+        uploadedAt = storedDatabase.uploadedAt;
+      } catch (error) {
+        console.error("Unable to persist uploaded processed database", error);
+      }
+
+      setProcessedBooks(records);
+      setProcessedDatabaseState({
+        fileName: file.name,
+        rowCount: records.length,
+        uploadedAt,
+        source: "uploaded",
+      });
+      setProcessedLookupIsbn("");
+      setProcessedBookResults([]);
+
+      let successMessage = `Database uploaded (${records.length.toLocaleString()} rows)`;
+
+      try {
+        await mirrorProcessedDatabaseToSource(file);
+        successMessage = "Database uploaded and saved to src/components";
+      } catch (error) {
+        console.warn("Processed database source mirror unavailable", error);
+      }
+
+      setToast(successMessage);
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload processed database",
+      );
+    } finally {
+      setProcessedDatabaseUploading(false);
+      setProcessedDatabaseReady(true);
+    }
+  }
+
   function handleProcessedBookLookup(rawIsbn: string) {
+    if (!processedDatabaseReady) {
+      setToast("Processed database is still loading");
+      return;
+    }
+
     const isbn = normalizeIsbn(rawIsbn);
     if (!isbn) {
       setToast("Invalid ISBN detected");
@@ -854,6 +1010,10 @@ export default function App() {
           <ProcessedLookupView
             onBack={backToHome}
             onScan={openProcessedLookupScanner}
+            onUpload={() => processedDatabaseInputRef.current?.click()}
+            isScanDisabled={!processedDatabaseReady || processedDatabaseUploading}
+            isUploadBusy={processedDatabaseUploading}
+            databaseSummary={processedDatabaseSummary}
           />
         ) : (
           <ProcessedLookupResultsView
@@ -865,6 +1025,14 @@ export default function App() {
 
         {toast ? <div className="toast">{toast}</div> : null}
       </div>
+
+      <input
+        ref={processedDatabaseInputRef}
+        hidden
+        type="file"
+        accept={PROCESSED_DATABASE_FILE_ACCEPT}
+        onChange={handleProcessedDatabaseUpload}
+      />
 
       <Suspense fallback={null}>
         <ScannerSheet
@@ -1099,9 +1267,17 @@ export default function App() {
 function ProcessedLookupView({
   onBack,
   onScan,
+  onUpload,
+  isScanDisabled,
+  isUploadBusy,
+  databaseSummary,
 }: {
   onBack: () => void;
   onScan: () => void;
+  onUpload: () => void;
+  isScanDisabled: boolean;
+  isUploadBusy: boolean;
+  databaseSummary: string;
 }) {
   return (
     <div className="app-shell">
@@ -1122,6 +1298,15 @@ function ProcessedLookupView({
             <p className="section-kicker">Processed Lookup</p>
             <h2>CHECK No. Perolehan</h2>
           </div>
+          <button
+            className="info-button check-upload-button"
+            type="button"
+            onClick={onUpload}
+            disabled={isUploadBusy}
+          >
+            <Upload size={20} />
+            {isUploadBusy ? "Uploading..." : "Upload database"}
+          </button>
         </div>
 
         <div className="check-screen-body">
@@ -1129,12 +1314,16 @@ function ProcessedLookupView({
             className="primary-button check-scan-button"
             type="button"
             onClick={onScan}
+            disabled={isScanDisabled}
           >
             <ScanLine size={20} />
             Scan
           </button>
           <p className="check-screen-description">
             Tap Scan button to view processed book details.
+          </p>
+          <p className="check-screen-description check-screen-meta">
+            {databaseSummary}
           </p>
         </div>
       </section>

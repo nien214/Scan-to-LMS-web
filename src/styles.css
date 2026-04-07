@@ -123,6 +123,7 @@ button {
 .icon-button:disabled,
 .action-button:disabled,
 .primary-button:disabled,
+.info-button:disabled,
 .secondary-button:disabled,
 .danger-button:disabled {
     opacity: 0.5;
@@ -437,10 +438,19 @@ button {
     padding-right: 26px;
 }
 
+.check-upload-button {
+    flex-shrink: 0;
+}
+
 .check-screen-description,
 .result-screen-subtitle {
     margin: 0;
     color: var(--muted);
+}
+
+.check-screen-meta {
+    max-width: 480px;
+    line-height: 1.5;
 }
 
 .processed-book-list {
@@ -624,6 +634,7 @@ button {
 }
 
 .primary-button,
+.info-button,
 .secondary-button,
 .danger-button,
 .action-button {
@@ -640,6 +651,12 @@ button {
 .primary-button {
     background: linear-gradient(180deg, var(--accent), var(--accent-deep));
     color: white;
+}
+
+.info-button {
+    background: linear-gradient(180deg, var(--info), var(--info-deep));
+    color: white;
+    box-shadow: 0 18px 34px rgba(31, 87, 215, 0.2);
 }
 
 .secondary-button {

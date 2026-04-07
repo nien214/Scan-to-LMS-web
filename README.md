@@ -48,11 +48,18 @@ supabase functions deploy complete-book-info --project-ref uwvwstnwtjexgwwnljmj
 npm run dev
 ```
 
+## Processed database upload
+
+- The `CHECK No. Perolehan` screen now accepts `.csv`, `.xlsx`, and `.xls` uploads.
+- The latest uploaded database is used immediately for lookup and is persisted in browser storage for reloads on that device.
+- When the app is running through the local Vite server or preview server, the uploaded source file is also mirrored into `src/components/processed-database.uploaded.*`, replacing the previous uploaded copy there.
+
 ## Production notes
 
 - The current SQL policies are public `anon` read/write policies because the native app did not have authentication. If this app will be used outside a trusted internal environment, add auth and tighten RLS before shipping.
 - The web app expects the `complete-book-info` Edge Function to be deployed in the same Supabase project as the `books` table.
 - Camera barcode scanning needs HTTPS on iPhone.
+- Static deployments cannot write back into `src/components` at runtime, so that source mirroring only works in local Node-backed Vite environments.
 - For GitHub Pages project-site deploys, the app builds with the `/Scan-to-LMS-web/` base path through the workflow in [.github/workflows/deploy.yml](/Users/tankuannien/Scan%20to%20LMS%20web/.github/workflows/deploy.yml).
 - Add GitHub repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before enabling the Pages workflow.
 

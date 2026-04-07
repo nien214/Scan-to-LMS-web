@@ -259,6 +259,106 @@ export function timestampFilename(prefix: string): string {
   return `${prefix}_${parts.join("")}.csv`;
 }
 
+const PROCESSED_BOOK_FIELD_KEYS: Array<keyof ProcessedBookRecord> = [
+  "noPerolehan",
+  "isbn",
+  "title",
+  "author",
+  "publisher",
+  "year",
+  "pages",
+  "price",
+  "language",
+  "type",
+  "dewey",
+  "initial",
+  "quantity",
+];
+
+const PROCESSED_BOOK_HEADER_MAP: Record<string, keyof ProcessedBookRecord> = {
+  noperolehan: "noPerolehan",
+  isbn: "isbn",
+  title: "title",
+  author: "author",
+  publisher: "publisher",
+  year: "year",
+  pages: "pages",
+  price: "price",
+  language: "language",
+  type: "type",
+  dewey: "dewey",
+  initial: "initial",
+  quantity: "quantity",
+};
+
+function normalizeProcessedBookHeader(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeProcessedBookCell(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function getProcessedBookColumnIndexes(headerRow: unknown[]): number[] {
+  const mappedIndexes = new Map<keyof ProcessedBookRecord, number>();
+
+  headerRow.forEach((cell, index) => {
+    const mappedKey =
+      PROCESSED_BOOK_HEADER_MAP[normalizeProcessedBookHeader(cell)];
+    if (mappedKey && !mappedIndexes.has(mappedKey)) {
+      mappedIndexes.set(mappedKey, index);
+    }
+  });
+
+  if (mappedIndexes.size === 0) {
+    return PROCESSED_BOOK_FIELD_KEYS.map((_, index) => index);
+  }
+
+  return PROCESSED_BOOK_FIELD_KEYS.map(
+    (fieldKey, index) => mappedIndexes.get(fieldKey) ?? index,
+  );
+}
+
+export function parseProcessedBooksTable(rows: Array<unknown[]>): ProcessedBookRecord[] {
+  const [headerRow, ...dataRows] = rows.filter((row) =>
+    row.some((cell) => normalizeProcessedBookCell(cell).length > 0),
+  );
+
+  if (!headerRow) {
+    return [];
+  }
+
+  const columnIndexes = getProcessedBookColumnIndexes(headerRow);
+
+  return dataRows
+    .map((row) => {
+      const values = PROCESSED_BOOK_FIELD_KEYS.map((fieldKey, index) => {
+        const cellIndex = columnIndexes[index];
+        return normalizeProcessedBookCell(row[cellIndex]);
+      });
+
+      return {
+        noPerolehan: values[0],
+        isbn: values[1],
+        title: values[2],
+        author: values[3],
+        publisher: values[4],
+        year: values[5],
+        pages: values[6],
+        price: values[7],
+        language: values[8],
+        type: values[9],
+        dewey: values[10],
+        initial: values[11],
+        quantity: values[12],
+      };
+    })
+    .filter((book) => book.isbn.length > 0);
+}
+
 function parseCsvRow(row: string): string[] {
   const values: string[] = [];
   let current = "";
@@ -295,29 +395,8 @@ export function parseProcessedBooksCsv(csv: string): ProcessedBookRecord[] {
   const rows = csv
     .replace(/^\uFEFF/, "")
     .split(/\r?\n/)
-    .filter((row) => row.trim().length > 0);
+    .filter((row) => row.trim().length > 0)
+    .map((row) => parseCsvRow(row));
 
-  return rows
-    .slice(1)
-    .map((row) => {
-      const cells = parseCsvRow(row);
-      const values = Array.from({ length: 13 }, (_, index) => cells[index] ?? "");
-
-      return {
-        noPerolehan: values[0],
-        isbn: values[1],
-        title: values[2],
-        author: values[3],
-        publisher: values[4],
-        year: values[5],
-        pages: values[6],
-        price: values[7],
-        language: values[8],
-        type: values[9],
-        dewey: values[10],
-        initial: values[11],
-        quantity: values[12],
-      };
-    })
-    .filter((book) => book.isbn.length > 0);
+  return parseProcessedBooksTable(rows);
 }
