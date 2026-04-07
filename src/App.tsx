@@ -24,6 +24,7 @@ import {
 import bundledProcessedBooksCsv from "./components/book.csv?raw";
 import {
   clearProcessedDatabaseClientCache,
+  getProcessedDatabaseErrorMessage,
   PROCESSED_DATABASE_FILE_ACCEPT,
   isSupportedProcessedDatabaseFile,
   loadProcessedDatabaseFromSupabase,
@@ -836,11 +837,7 @@ export default function App() {
         `Database uploaded to Supabase (${sharedDatabase.records.length.toLocaleString()} rows)`,
       );
     } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Failed to upload processed database",
-      );
+      setToast(getProcessedDatabaseErrorMessage(error));
     } finally {
       setProcessedDatabaseUploading(false);
       setProcessedDatabaseReady(true);

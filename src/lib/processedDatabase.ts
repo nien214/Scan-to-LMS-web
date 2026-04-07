@@ -26,6 +26,13 @@ export type SharedProcessedDatabase = {
   records: ProcessedBookRecord[];
 };
 
+type SupabaseLikeError = {
+  code?: string | null;
+  details?: string | null;
+  hint?: string | null;
+  message?: string | null;
+};
+
 function getProcessedDatabaseExtension(fileName: string): string {
   return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -45,6 +52,25 @@ export function isSupportedProcessedDatabaseFile(file: File): boolean {
   return ["csv", "xlsx", "xls"].includes(
     getProcessedDatabaseExtension(file.name),
   );
+}
+
+export function getProcessedDatabaseErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const value = error as SupabaseLikeError;
+    if (value.code === "PGRST205") {
+      return "Supabase table `processed_database_files` is missing or not visible yet. Re-run the SQL script in SQL Editor, wait a few seconds, then refresh the app.";
+    }
+
+    if (typeof value.message === "string" && value.message.trim().length > 0) {
+      return value.message;
+    }
+  }
+
+  return "Failed to upload processed database";
 }
 
 function coerceProcessedBookRecord(
