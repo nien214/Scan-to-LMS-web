@@ -717,6 +717,25 @@ export default function App() {
     setScannerOpen(true);
   }
 
+  function openProcessedDatabasePicker() {
+    if (processedDatabaseUploading) {
+      return;
+    }
+
+    const input = processedDatabaseInputRef.current;
+    if (!input) {
+      setToast("Upload picker is unavailable");
+      return;
+    }
+
+    if (typeof input.showPicker === "function") {
+      input.showPicker();
+      return;
+    }
+
+    input.click();
+  }
+
   async function handleProcessedDatabaseUpload(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -1010,7 +1029,7 @@ export default function App() {
           <ProcessedLookupView
             onBack={backToHome}
             onScan={openProcessedLookupScanner}
-            onUpload={() => processedDatabaseInputRef.current?.click()}
+            onUpload={openProcessedDatabasePicker}
             isScanDisabled={!processedDatabaseReady || processedDatabaseUploading}
             isUploadBusy={processedDatabaseUploading}
             databaseSummary={processedDatabaseSummary}
@@ -1028,10 +1047,11 @@ export default function App() {
 
       <input
         ref={processedDatabaseInputRef}
-        hidden
+        className="visually-hidden-input"
         type="file"
         accept={PROCESSED_DATABASE_FILE_ACCEPT}
         onChange={handleProcessedDatabaseUpload}
+        tabIndex={-1}
       />
 
       <Suspense fallback={null}>
