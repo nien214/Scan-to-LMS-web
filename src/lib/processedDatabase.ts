@@ -1,22 +1,28 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProcessedBookRecord } from "../types";
 import { parseProcessedBooksCsv, parseProcessedBooksTable } from "./utils";
 
-const INDEXED_DB_NAME = "scan-to-lms";
-const INDEXED_DB_VERSION = 1;
-const INDEXED_DB_STORE_NAME = "processed-database";
-const INDEXED_DB_LATEST_KEY = "latest";
+const PROCESSED_DATABASE_BUCKET = "processed-database";
+const PROCESSED_DATABASE_METADATA_KEY = "latest";
+const PROCESSED_DATABASE_METADATA_TABLE = "processed_database_files";
+const LEGACY_PROCESSED_DATABASE_INDEXED_DB_NAME = "scan-to-lms";
+
+type ProcessedDatabaseMetadataRow = {
+  key: string;
+  file_name: string;
+  mime_type: string;
+  storage_path: string;
+  uploaded_at: string;
+};
 
 export const PROCESSED_DATABASE_FILE_ACCEPT = ".csv,.xlsx,.xls";
 
-export type StoredProcessedDatabase = {
+export type SharedProcessedDatabase = {
   fileName: string;
   mimeType: string;
+  storagePath: string;
   uploadedAt: string;
   records: ProcessedBookRecord[];
-};
-
-type StoredProcessedDatabaseEntry = StoredProcessedDatabase & {
-  id: typeof INDEXED_DB_LATEST_KEY;
 };
 
 function getProcessedDatabaseExtension(fileName: string): string {
@@ -34,54 +40,16 @@ function guessProcessedDatabaseMimeType(fileName: string): string {
   return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 }
 
-function openProcessedDatabaseStore(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(INDEXED_DB_NAME, INDEXED_DB_VERSION);
-
-    request.addEventListener("upgradeneeded", () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(INDEXED_DB_STORE_NAME)) {
-        database.createObjectStore(INDEXED_DB_STORE_NAME, { keyPath: "id" });
-      }
-    });
-    request.addEventListener("success", () => resolve(request.result));
-    request.addEventListener("error", () => {
-      reject(request.error ?? new Error("Failed to open processed database store."));
-    });
-  });
+function getProcessedDatabaseStoragePath(fileName: string): string {
+  const extension = getProcessedDatabaseExtension(fileName);
+  return `latest/processed-database.${extension}`;
 }
 
-function waitForTransaction(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.addEventListener("complete", () => resolve());
-    transaction.addEventListener("abort", () => {
-      reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
-    });
-    transaction.addEventListener("error", () => {
-      reject(transaction.error ?? new Error("IndexedDB transaction failed."));
-    });
-  });
-}
-
-function blobToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.addEventListener("load", () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("Unable to encode uploaded database file."));
-        return;
-      }
-
-      const [, base64 = ""] = reader.result.split(",", 2);
-      resolve(base64);
-    });
-    reader.addEventListener("error", () => {
-      reject(reader.error ?? new Error("Unable to read uploaded database file."));
-    });
-
-    reader.readAsDataURL(file);
-  });
+function getStaleProcessedDatabaseStoragePaths(fileName: string): string[] {
+  const activePath = getProcessedDatabaseStoragePath(fileName);
+  return ["csv", "xlsx", "xls"]
+    .map((extension) => `latest/processed-database.${extension}`)
+    .filter((path) => path !== activePath);
 }
 
 export function isSupportedProcessedDatabaseFile(file: File): boolean {
@@ -90,18 +58,19 @@ export function isSupportedProcessedDatabaseFile(file: File): boolean {
   );
 }
 
-export async function parseProcessedDatabaseFile(
-  file: File,
+async function parseProcessedDatabaseBlob(
+  fileName: string,
+  blob: Blob,
 ): Promise<ProcessedBookRecord[]> {
-  const extension = getProcessedDatabaseExtension(file.name);
+  const extension = getProcessedDatabaseExtension(fileName);
 
   if (extension === "csv") {
-    return parseProcessedBooksCsv(await file.text());
+    return parseProcessedBooksCsv(await blob.text());
   }
 
   if (extension === "xlsx" || extension === "xls") {
     const { read, utils: xlsxUtils } = await import("xlsx");
-    const workbook = read(await file.arrayBuffer(), { type: "array" });
+    const workbook = read(await blob.arrayBuffer(), { type: "array" });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
       return [];
@@ -120,96 +89,148 @@ export async function parseProcessedDatabaseFile(
   throw new Error("Upload a CSV or Excel file.");
 }
 
-export async function loadStoredProcessedDatabase(): Promise<StoredProcessedDatabase | null> {
-  const database = await openProcessedDatabaseStore();
-
-  try {
-    return await new Promise((resolve, reject) => {
-      const transaction = database.transaction(INDEXED_DB_STORE_NAME, "readonly");
-      const request = transaction
-        .objectStore(INDEXED_DB_STORE_NAME)
-        .get(INDEXED_DB_LATEST_KEY);
-
-      request.addEventListener("success", () => {
-        const entry = request.result as StoredProcessedDatabaseEntry | undefined;
-        if (!entry) {
-          resolve(null);
-          return;
-        }
-
-        resolve({
-          fileName: entry.fileName,
-          mimeType: entry.mimeType,
-          uploadedAt: entry.uploadedAt,
-          records: entry.records,
-        });
-      });
-      request.addEventListener("error", () => {
-        reject(
-          request.error ?? new Error("Failed to read the stored processed database."),
-        );
-      });
-    });
-  } finally {
-    database.close();
-  }
+export async function parseProcessedDatabaseFile(
+  file: File,
+): Promise<ProcessedBookRecord[]> {
+  return parseProcessedDatabaseBlob(file.name, file);
 }
 
-export async function saveStoredProcessedDatabase(
+export async function loadProcessedDatabaseFromSupabase(
+  client: SupabaseClient,
+): Promise<SharedProcessedDatabase | null> {
+  const { data: metadata, error: metadataError } = await client
+    .from(PROCESSED_DATABASE_METADATA_TABLE)
+    .select("key, file_name, mime_type, storage_path, uploaded_at")
+    .eq("key", PROCESSED_DATABASE_METADATA_KEY)
+    .maybeSingle<ProcessedDatabaseMetadataRow>();
+
+  if (metadataError) {
+    throw metadataError;
+  }
+
+  if (!metadata) {
+    return null;
+  }
+
+  const { data: blob, error: downloadError } = await client.storage
+    .from(PROCESSED_DATABASE_BUCKET)
+    .download(metadata.storage_path);
+
+  if (downloadError) {
+    throw downloadError;
+  }
+
+  return {
+    fileName: metadata.file_name,
+    mimeType: metadata.mime_type,
+    storagePath: metadata.storage_path,
+    uploadedAt: metadata.uploaded_at,
+    records: await parseProcessedDatabaseBlob(metadata.file_name, blob),
+  };
+}
+
+export async function uploadProcessedDatabaseToSupabase(
+  client: SupabaseClient,
   file: File,
   records: ProcessedBookRecord[],
-): Promise<StoredProcessedDatabase> {
-  const database = await openProcessedDatabaseStore();
+): Promise<SharedProcessedDatabase> {
+  const mimeType = file.type || guessProcessedDatabaseMimeType(file.name);
+  const storagePath = getProcessedDatabaseStoragePath(file.name);
   const uploadedAt = new Date().toISOString();
 
-  try {
-    const transaction = database.transaction(INDEXED_DB_STORE_NAME, "readwrite");
-    const entry: StoredProcessedDatabaseEntry = {
-      id: INDEXED_DB_LATEST_KEY,
-      fileName: file.name,
-      mimeType: file.type || guessProcessedDatabaseMimeType(file.name),
-      uploadedAt,
-      records,
-    };
+  const { error: uploadError } = await client.storage
+    .from(PROCESSED_DATABASE_BUCKET)
+    .upload(storagePath, file, {
+      contentType: mimeType,
+      upsert: true,
+    });
 
-    transaction.objectStore(INDEXED_DB_STORE_NAME).put(entry);
-    await waitForTransaction(transaction);
-
-    return {
-      fileName: entry.fileName,
-      mimeType: entry.mimeType,
-      uploadedAt: entry.uploadedAt,
-      records: entry.records,
-    };
-  } finally {
-    database.close();
+  if (uploadError) {
+    throw uploadError;
   }
+
+  const stalePaths = getStaleProcessedDatabaseStoragePaths(file.name);
+  if (stalePaths.length > 0) {
+    const { error: removeError } = await client.storage
+      .from(PROCESSED_DATABASE_BUCKET)
+      .remove(stalePaths);
+    if (removeError) {
+      console.error("Unable to remove stale processed database objects", removeError);
+    }
+  }
+
+  const { error: metadataError } = await client
+    .from(PROCESSED_DATABASE_METADATA_TABLE)
+    .upsert(
+      {
+        key: PROCESSED_DATABASE_METADATA_KEY,
+        file_name: file.name,
+        mime_type: mimeType,
+        storage_path: storagePath,
+        uploaded_at: uploadedAt,
+      },
+      { onConflict: "key" },
+    );
+
+  if (metadataError) {
+    throw metadataError;
+  }
+
+  return {
+    fileName: file.name,
+    mimeType,
+    storagePath,
+    uploadedAt,
+    records,
+  };
 }
 
-export async function mirrorProcessedDatabaseToSource(file: File): Promise<{
-  fileName: string;
-  path: string;
-}> {
-  const endpoint = new URL(
-    "api/processed-database",
-    `${window.location.origin}${import.meta.env.BASE_URL}`,
-  ).toString();
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      fileName: file.name,
-      mimeType: file.type || guessProcessedDatabaseMimeType(file.name),
-      contentBase64: await blobToBase64(file),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Source mirror endpoint is unavailable.");
+function clearLegacyProcessedDatabaseIndexedDb(): Promise<void> {
+  if (typeof indexedDB === "undefined") {
+    return Promise.resolve();
   }
 
-  const payload = (await response.json()) as { fileName: string; path: string };
-  return payload;
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(
+      LEGACY_PROCESSED_DATABASE_INDEXED_DB_NAME,
+    );
+
+    request.addEventListener("success", () => resolve());
+    request.addEventListener("blocked", () => resolve());
+    request.addEventListener("error", () => resolve());
+  });
+}
+
+async function clearProcessedDatabaseCacheStorage(): Promise<void> {
+  if (typeof window === "undefined" || !("caches" in window)) {
+    return;
+  }
+
+  const cacheNames = await window.caches.keys();
+
+  await Promise.all(
+    cacheNames.map(async (cacheName) => {
+      const cache = await window.caches.open(cacheName);
+      const requests = await cache.keys();
+
+      await Promise.all(
+        requests
+          .filter((request) => {
+            const url = request.url;
+            return (
+              url.includes("/storage/v1/object/") &&
+              url.includes(`/${PROCESSED_DATABASE_BUCKET}/`)
+            );
+          })
+          .map((request) => cache.delete(request)),
+      );
+    }),
+  );
+}
+
+export async function clearProcessedDatabaseClientCache(): Promise<void> {
+  await Promise.all([
+    clearLegacyProcessedDatabaseIndexedDb(),
+    clearProcessedDatabaseCacheStorage(),
+  ]);
 }

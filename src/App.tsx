@@ -23,12 +23,12 @@ import {
 } from "lucide-react";
 import bundledProcessedBooksCsv from "./components/book.csv?raw";
 import {
+  clearProcessedDatabaseClientCache,
   PROCESSED_DATABASE_FILE_ACCEPT,
   isSupportedProcessedDatabaseFile,
-  loadStoredProcessedDatabase,
-  mirrorProcessedDatabaseToSource,
+  loadProcessedDatabaseFromSupabase,
   parseProcessedDatabaseFile,
-  saveStoredProcessedDatabase,
+  uploadProcessedDatabaseToSupabase,
 } from "./lib/processedDatabase";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 import {
@@ -98,7 +98,7 @@ type ProcessedDatabaseState = {
   fileName: string;
   rowCount: number;
   uploadedAt: string | null;
-  source: "bundled" | "uploaded";
+  source: "bundled" | "supabase";
 };
 
 const SUPABASE_CONFIG_MESSAGE =
@@ -164,6 +164,10 @@ export default function App() {
   const [processedDatabaseUploading, setProcessedDatabaseUploading] =
     useState(false);
   const processedDatabaseInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    void clearProcessedDatabaseClientCache();
+  }, []);
 
   useEffect(() => {
     const client = supabase;
@@ -262,9 +266,9 @@ export default function App() {
 
     const details = [
       `${processedDatabaseState.rowCount.toLocaleString()} rows`,
-      processedDatabaseState.source === "uploaded" &&
+      processedDatabaseState.source === "supabase" &&
       processedDatabaseState.uploadedAt
-        ? `Uploaded ${new Date(processedDatabaseState.uploadedAt).toLocaleString()}`
+        ? `Synced ${new Date(processedDatabaseState.uploadedAt).toLocaleString()}`
         : "Bundled fallback",
     ];
 
@@ -274,33 +278,82 @@ export default function App() {
   useEffect(() => {
     let ignore = false;
 
-    void (async () => {
+    const applyBundledProcessedDatabase = () => {
+      if (ignore) {
+        return;
+      }
+
+      setProcessedBooks(bundledProcessedBooks);
+      setProcessedDatabaseState({
+        fileName: "book.csv",
+        rowCount: bundledProcessedBooks.length,
+        uploadedAt: null,
+        source: "bundled",
+      });
+    };
+
+    const syncProcessedDatabase = async () => {
+      if (!supabase) {
+        applyBundledProcessedDatabase();
+        if (!ignore) {
+          setProcessedDatabaseReady(true);
+        }
+        return;
+      }
+
       try {
-        const storedDatabase = await loadStoredProcessedDatabase();
-        if (!storedDatabase || ignore) {
+        const sharedDatabase = await loadProcessedDatabaseFromSupabase(supabase);
+        if (!sharedDatabase) {
+          applyBundledProcessedDatabase();
           return;
         }
 
-        setProcessedBooks(storedDatabase.records);
+        if (ignore) {
+          return;
+        }
+
+        setProcessedBooks(sharedDatabase.records);
         setProcessedDatabaseState({
-          fileName: storedDatabase.fileName,
-          rowCount: storedDatabase.records.length,
-          uploadedAt: storedDatabase.uploadedAt,
-          source: "uploaded",
+          fileName: sharedDatabase.fileName,
+          rowCount: sharedDatabase.records.length,
+          uploadedAt: sharedDatabase.uploadedAt,
+          source: "supabase",
         });
       } catch (error) {
-        console.error("Unable to restore uploaded processed database", error);
+        console.error("Unable to load shared processed database", error);
+        applyBundledProcessedDatabase();
       } finally {
         if (!ignore) {
           setProcessedDatabaseReady(true);
         }
       }
-    })();
+    };
+
+    void syncProcessedDatabase();
+
+    if (!supabase) {
+      return () => {
+        ignore = true;
+      };
+    }
+
+    const client = supabase;
+    const channel = client
+      .channel("public-processed-database")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "processed_database_files" },
+        () => {
+          void syncProcessedDatabase();
+        },
+      )
+      .subscribe();
 
     return () => {
       ignore = true;
+      void client.removeChannel(channel);
     };
-  }, []);
+  }, [bundledProcessedBooks]);
 
   function getQuickFilterPreset(mode: QuickFilterMode): BooksFilterState {
     switch (mode) {
@@ -754,40 +807,34 @@ export default function App() {
     setProcessedDatabaseUploading(true);
 
     try {
+      if (!supabase) {
+        throw new Error("Supabase upload is unavailable");
+      }
+
       const records = await parseProcessedDatabaseFile(file);
       if (records.length === 0) {
         throw new Error("No valid rows found in the uploaded database");
       }
 
-      let uploadedAt = new Date().toISOString();
+      const sharedDatabase = await uploadProcessedDatabaseToSupabase(
+        supabase,
+        file,
+        records,
+      );
+      await clearProcessedDatabaseClientCache();
 
-      try {
-        const storedDatabase = await saveStoredProcessedDatabase(file, records);
-        uploadedAt = storedDatabase.uploadedAt;
-      } catch (error) {
-        console.error("Unable to persist uploaded processed database", error);
-      }
-
-      setProcessedBooks(records);
+      setProcessedBooks(sharedDatabase.records);
       setProcessedDatabaseState({
-        fileName: file.name,
-        rowCount: records.length,
-        uploadedAt,
-        source: "uploaded",
+        fileName: sharedDatabase.fileName,
+        rowCount: sharedDatabase.records.length,
+        uploadedAt: sharedDatabase.uploadedAt,
+        source: "supabase",
       });
       setProcessedLookupIsbn("");
       setProcessedBookResults([]);
-
-      let successMessage = `Database uploaded (${records.length.toLocaleString()} rows)`;
-
-      try {
-        await mirrorProcessedDatabaseToSource(file);
-        successMessage = "Database uploaded and saved to src/components";
-      } catch (error) {
-        console.warn("Processed database source mirror unavailable", error);
-      }
-
-      setToast(successMessage);
+      setToast(
+        `Database uploaded to Supabase (${sharedDatabase.records.length.toLocaleString()} rows)`,
+      );
     } catch (error) {
       setToast(
         error instanceof Error
