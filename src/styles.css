@@ -414,6 +414,12 @@ button {
     margin-bottom: 14px;
 }
 
+.subpage-header-actions {
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
 .page-back-button {
     min-width: 104px;
 }
@@ -855,6 +861,11 @@ button {
 }
 
 @media (max-width: 480px) {
+    .subpage-header-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
     .manual-entry-row,
     .detail-actions,
     .split-fields {

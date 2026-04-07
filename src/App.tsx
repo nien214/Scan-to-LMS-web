@@ -1281,7 +1281,7 @@ function ProcessedLookupView({
 }) {
   return (
     <div className="app-shell">
-      <div className="subpage-header">
+      <div className="subpage-header subpage-header-actions">
         <button
           className="secondary-button page-back-button"
           type="button"
@@ -1289,6 +1289,15 @@ function ProcessedLookupView({
         >
           <ArrowLeft size={18} />
           Back
+        </button>
+        <button
+          className="info-button check-upload-button"
+          type="button"
+          onClick={onUpload}
+          disabled={isUploadBusy}
+        >
+          <Upload size={20} />
+          {isUploadBusy ? "Uploading..." : "Upload database"}
         </button>
       </div>
 
@@ -1298,15 +1307,6 @@ function ProcessedLookupView({
             <p className="section-kicker">Processed Lookup</p>
             <h2>CHECK No. Perolehan</h2>
           </div>
-          <button
-            className="info-button check-upload-button"
-            type="button"
-            onClick={onUpload}
-            disabled={isUploadBusy}
-          >
-            <Upload size={20} />
-            {isUploadBusy ? "Uploading..." : "Upload database"}
-          </button>
         </div>
 
         <div className="check-screen-body">
