@@ -415,9 +415,18 @@ button {
 }
 
 .subpage-header-actions {
+    width: 100%;
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+}
+
+.subpage-header-actions .page-back-button,
+.subpage-header-actions .check-upload-button {
+    min-width: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+    white-space: nowrap;
 }
 
 .page-back-button {
@@ -861,11 +870,6 @@ button {
 }
 
 @media (max-width: 480px) {
-    .subpage-header-actions {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
     .manual-entry-row,
     .detail-actions,
     .split-fields {
@@ -884,5 +888,22 @@ button {
 
     .book-row-actions {
         justify-content: flex-end;
+    }
+}
+
+@media (max-width: 360px) {
+    .subpage-header-actions {
+        gap: 8px;
+    }
+
+    .subpage-header-actions .page-back-button,
+    .subpage-header-actions .check-upload-button {
+        padding-left: 12px;
+        padding-right: 12px;
+        font-size: 0.92rem;
+    }
+
+    .subpage-header-actions .page-back-button {
+        min-width: 88px;
     }
 }
